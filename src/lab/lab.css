@@ -1,0 +1,16 @@
+#lab-ui { position: fixed; inset: 0; pointer-events: none; font: 400 12px var(--mono); }
+#game { cursor: grab; }
+.lab-side { position: absolute; top: 0; bottom: 0; width: 248px; overflow-y: auto; pointer-events: auto; background: rgb(6 5 12 / 0.86); border-right: 1px solid var(--line); padding: 10px; }
+.lab-side.right { right: 0; border-right: 0; border-left: 1px solid var(--line); width: 280px; }
+.lab-side h2 { font: 700 11px var(--mono); letter-spacing: 0.25em; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; }
+.lab-side h1 { font: 700 18px var(--font); letter-spacing: 0.15em; margin: 0 0 6px; }
+.lab-side h1 span { color: var(--cyan); }
+.lab-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+.lab-btns button { background: rgb(255 255 255 / 0.04); color: var(--ink); border: 1px solid rgb(255 255 255 / 0.1); font: 400 11px var(--mono); padding: 4px 7px; cursor: pointer; }
+.lab-btns button:hover { border-color: var(--cyan); color: var(--cyan); }
+.lab-btns button.on { background: var(--cyan); color: var(--void); }
+.lab-param { display: grid; grid-template-columns: 90px 1fr 44px; gap: 6px; align-items: center; margin: 3px 0; color: var(--muted); }
+.lab-param input { width: 100%; accent-color: var(--cyan); }
+.lab-param output { color: var(--ink); text-align: right; }
+.lab-info { color: var(--muted); line-height: 1.6; white-space: pre-wrap; }
+.lab-info b { color: var(--ink); }

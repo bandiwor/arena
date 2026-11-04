@@ -1,0 +1,372 @@
+import {
+  BoxGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
+  OctahedronGeometry,
+  SphereGeometry,
+  TetrahedronGeometry,
+  TorusGeometry,
+  type BufferGeometry,
+} from 'three';
+import { ModelBuilder, Part } from './builder';
+import { PAL } from '../palette';
+
+export interface ParamSpec {
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  readonly value: number;
+}
+export type Params = Record<string, number>;
+
+export interface ModelDef {
+  readonly key: string;
+  readonly name: string;
+  /** visual height (for dissolve normalisation & hit points) */
+  readonly height: number;
+  /** rim colour hex: team colour */
+  readonly rim: number;
+  readonly params: Readonly<Record<string, ParamSpec>>;
+  build(p: Params): BufferGeometry;
+}
+
+const P = (value: number, min: number, max: number, step = 0.01): ParamSpec => ({ value, min, max, step });
+
+export function defaults(def: ModelDef): Params {
+  const o: Params = {};
+  for (const [k, s] of Object.entries(def.params)) o[k] = s.value;
+  return o;
+}
+
+const D2R = Math.PI / 180;
+
+// ───────────────────────────────────────── player
+const player: ModelDef = {
+  key: 'player',
+  name: 'Игрок — «Вектор»',
+  height: 1.3,
+  rim: PAL.player,
+  params: { bodyLen: P(1.15, 0.6, 2), bodyW: P(0.75, 0.4, 1.4), gunLen: P(0.9, 0.3, 1.6), ring: P(0.62, 0.3, 1), stripes: P(1, 0, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const dark = 0x2a3248;
+    const hull = 0x55617e;
+    // hover ring (spins)
+    b.add(new TorusGeometry(p['ring']!, 0.07, 4, 18), { color: PAL.player, emit: 1, part: Part.Spin, param: 4, pos: [0, 0.22, 0], rot: [Math.PI / 2, 0, 0], pivot: [0, 0.22, 0] });
+    // wedge body: 4-sided cone pointing forward
+    b.add(new ConeGeometry(0.5, 1, 4, 1), { color: hull, pos: [0.05, 0.62, 0], rot: [0, 0, -Math.PI / 2], scale: [p['bodyW']!, p['bodyLen']!, 0.62] });
+    b.add(new BoxGeometry(0.7, 0.28, 0.62), { color: dark, pos: [-0.25, 0.48, 0] });
+    // cockpit
+    b.add(new OctahedronGeometry(0.2, 0), { color: PAL.playerCore, emit: 0.9, part: Part.Core, param: 0.25, pos: [0.15, 0.82, 0], scale: [1.4, 0.6, 0.9] });
+    // shoulder pods
+    for (const z of [-1, 1]) {
+      b.add(new BoxGeometry(0.42, 0.24, 0.22), { color: hull, pos: [-0.25, 0.7, z * 0.42] });
+      b.add(new BoxGeometry(0.44, 0.04, 0.24), { color: PAL.player, emit: p['stripes']!, pos: [-0.25, 0.83, z * 0.42] });
+      b.add(new BoxGeometry(0.08, 0.14, 0.16), { color: PAL.hazard, emit: 0.8, pos: [-0.5, 0.66, z * 0.42] });
+    }
+    // gun (recoils)
+    const gl = p['gunLen']!;
+    b.add(new BoxGeometry(gl, 0.14, 0.14), { color: dark, part: Part.Recoil, param: 0.25, pos: [0.4 + gl / 2, 0.6, 0.2] });
+    b.add(new BoxGeometry(0.1, 0.1, 0.1), { color: PAL.player, emit: 1, part: Part.Recoil, param: 0.25, pos: [0.42 + gl, 0.6, 0.2] });
+    // thrusters
+    b.add(new CylinderGeometry(0.12, 0.08, 0.2, 6), { color: PAL.player, emit: 1, pos: [-0.62, 0.48, 0], rot: [0, 0, Math.PI / 2] });
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── swarmer (flesh crawler)
+const swarmer: ModelDef = {
+  key: 'swarmer',
+  name: 'Роевик (плоть)',
+  height: 0.75,
+  rim: PAL.enemy,
+  params: { size: P(0.5, 0.3, 0.8), spikes: P(5, 0, 9, 1), legLen: P(0.5, 0.2, 0.9), jitter: P(0.12, 0, 0.3) },
+  build(p) {
+    const b = new ModelBuilder();
+    const s = p['size']!;
+    b.add(new IcosahedronGeometry(s, 1), { color: PAL.flesh, pos: [0, 0.45, 0], scale: [1.25, 0.75, 1], jitter: p['jitter']!, jitterSeed: 1 });
+    b.add(new IcosahedronGeometry(s * 0.45, 0), { color: 0x4a0812, pos: [s * 0.9, 0.42, 0], scale: [1, 0.8, 1], jitter: p['jitter']! * 0.5 });
+    // eyes
+    for (const z of [-1, 1]) b.add(new SphereGeometry(0.07, 5, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.6, pos: [s * 1.12, 0.5, z * 0.11], pivot: [s * 1.12, 0.5, z * 0.11] });
+    // mandibles
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.05, 0.3, 4), { color: 0xd8c8b0, pos: [s * 1.2, 0.33, z * 0.12], rot: [0, 0, -Math.PI / 2 - 0.3], part: Part.Petal, param: 0.6, pivot: [s * 1.1, 0.33, z * 0.12] });
+    // dorsal spikes
+    const n = p['spikes']!;
+    for (let k = 0; k < n; k++) {
+      const t = n === 1 ? 0.5 : k / (n - 1);
+      b.add(new ConeGeometry(0.07, 0.32, 4), { color: 0x2a0408, emit: 0, pos: [s * (0.6 - t * 1.3), 0.45 + s * 0.68, 0], rot: [0, 0, 0.5 + t * 0.4] });
+    }
+    // legs: 3 per side
+    const L = p['legLen']!;
+    const start = b.vertexCount;
+    for (let k = 0; k < 3; k++) {
+      const x = (k - 1) * s * 0.65;
+      b.add(new ConeGeometry(0.05, L, 4), { color: 0x3a060c, part: Part.Leg, param: 1, pos: [x, 0.25, s * 0.85], rot: [-0.9, 0, 0], pivot: [x, 0.4, s * 0.6] });
+    }
+    b.mirrorZ(start);
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── gunner drone (machine)
+const gunner: ModelDef = {
+  key: 'gunner',
+  name: 'Дрон-стрелок (машина)',
+  height: 1.5,
+  rim: PAL.enemy,
+  params: { hover: P(1.0, 0.5, 1.6), body: P(0.5, 0.3, 0.8), rotor: P(0.75, 0.4, 1.2), barrels: P(2, 1, 4, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const h = p['hover']!;
+    const bs = p['body']!;
+    const bob = { part: Part.Bob, param: 0.08 } as const;
+    b.add(new CylinderGeometry(bs, bs * 0.85, 0.42, 6), { color: PAL.machine, pos: [0, h, 0], ...bob });
+    b.add(new CylinderGeometry(bs * 0.85, bs * 0.4, 0.2, 6), { color: 0x1b1d26, pos: [0, h - 0.31, 0], ...bob });
+    b.add(new CylinderGeometry(bs * 0.6, bs * 0.9, 0.16, 6), { color: 0x3a3e4e, pos: [0, h + 0.29, 0], ...bob });
+    // hazard band
+    b.add(new CylinderGeometry(bs * 1.01, bs * 1.01, 0.06, 6), { color: PAL.hazard, emit: 0.6, pos: [0, h + 0.08, 0], ...bob });
+    // eye lens (charges up)
+    b.add(new SphereGeometry(0.12, 8, 6), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.9, pos: [bs * 0.95, h, 0], pivot: [bs * 0.95, h, 0] });
+    // barrels
+    const nb = p['barrels']!;
+    for (let k = 0; k < nb; k++) {
+      const z = nb === 1 ? 0 : (k / (nb - 1) - 0.5) * 0.5;
+      b.add(new BoxGeometry(0.55, 0.09, 0.09), { color: 0x14161e, part: Part.Recoil, param: 0.15, pos: [bs + 0.2, h - 0.15, z] });
+      b.add(new BoxGeometry(0.06, 0.07, 0.07), { color: PAL.enemy, emit: 0.8, part: Part.Recoil, param: 0.15, pos: [bs + 0.48, h - 0.15, z] });
+    }
+    // rotor ring
+    b.add(new TorusGeometry(p['rotor']!, 0.04, 3, 16), { color: PAL.enemy, emit: 0.7, part: Part.Spin, param: 9, pos: [0, h + 0.05, 0], rot: [Math.PI / 2, 0, 0], pivot: [0, h, 0] });
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2;
+      b.add(new BoxGeometry(p['rotor']!, 0.03, 0.08), { color: 0x3a3e4e, part: Part.Spin, param: 9, pos: [Math.cos(a) * p['rotor']! * 0.5, h + 0.05, Math.sin(a) * p['rotor']! * 0.5], rot: [0, -a, 0], pivot: [0, h, 0] });
+    }
+    b.add(new CylinderGeometry(0.015, 0.015, 0.5, 3), { color: 0x777777, pos: [-bs * 0.5, h + 0.55, 0], ...bob });
+    b.add(new SphereGeometry(0.05, 4, 3), { color: PAL.enemy, emit: 1, pos: [-bs * 0.5, h + 0.82, 0], ...bob });
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── charger (flesh brute)
+const charger: ModelDef = {
+  key: 'charger',
+  name: 'Таран (плоть, броня)',
+  height: 1.6,
+  rim: PAL.enemy,
+  params: { bulk: P(0.95, 0.6, 1.4), horn: P(0.7, 0.2, 1.2), plates: P(4, 0, 7, 1), jitter: P(0.16, 0, 0.35) },
+  build(p) {
+    const b = new ModelBuilder();
+    const k = p['bulk']!;
+    b.add(new IcosahedronGeometry(k, 1), { color: PAL.flesh, pos: [-0.15, 0.95, 0], scale: [1.3, 0.85, 1], jitter: p['jitter']!, jitterSeed: 4 });
+    // armoured head
+    b.add(new BoxGeometry(0.75, 0.6, 0.85), { color: 0xd8c8b0, pos: [k * 0.95, 0.78, 0], rot: [0, 0, -0.25] });
+    b.add(new BoxGeometry(0.3, 0.12, 0.7), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.4, pos: [k * 1.3, 0.85, 0], pivot: [k * 1.3, 0.85, 0] });
+    // horns
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.13, p['horn']!, 5), { color: 0xeee2c8, pos: [k * 1.3, 1.05, z * 0.38], rot: [z * 0.4, 0, -Math.PI / 2 + 0.5] });
+    // dorsal armour plates + glowing vents between
+    const n = p['plates']!;
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      b.add(new BoxGeometry(0.42, 0.14, 1.1 - t * 0.3), { color: 0xbfae93, pos: [k * (0.55 - t * 1.4), 1.62 - t * 0.25, 0], rot: [0, 0, 0.2 + t * 0.3] });
+      if (i < n - 1) b.add(new BoxGeometry(0.1, 0.08, 0.7), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.3, pos: [k * (0.35 - t * 1.4), 1.6 - t * 0.25, 0], pivot: [k * (0.35 - t * 1.4), 1.6 - t * 0.25, 0] });
+    }
+    const start = b.vertexCount;
+    for (const x of [0.45, -0.75]) b.add(new CylinderGeometry(0.2, 0.13, 0.75, 5), { color: 0x4a0812, part: Part.Leg, param: 1, pos: [x, 0.38, 0.55], pivot: [x, 0.75, 0.55] });
+    b.mirrorZ(start);
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── archer (plant)
+const archer: ModelDef = {
+  key: 'archer',
+  name: 'Терновник (растение)',
+  height: 1.7,
+  rim: PAL.enemy,
+  params: { stem: P(1.25, 0.8, 1.8), petals: P(6, 3, 10, 1), petalLen: P(0.6, 0.3, 1), thorns: P(7, 0, 14, 1), bloom: P(1, 0, 2) },
+  build(p) {
+    const b = new ModelBuilder();
+    const H = p['stem']!;
+    // roots
+    const start = b.vertexCount;
+    for (let i = 0; i < 2; i++) b.add(new ConeGeometry(0.08, 0.6, 4), { color: 0x23401a, part: Part.Leg, param: 0.6, pos: [i ? -0.25 : 0.25, 0.15, 0.25], rot: [-1.0, 0, i ? 0.4 : -0.4], pivot: [0, 0.3, 0] });
+    b.mirrorZ(start);
+    // stem segments (slight zigzag)
+    for (let i = 0; i < 4; i++) {
+      const y = 0.2 + (i + 0.5) * (H / 4);
+      b.add(new CylinderGeometry(0.13 - i * 0.015, 0.16 - i * 0.015, H / 4 + 0.02, 5), { color: PAL.plant, pos: [Math.sin(i * 1.7) * 0.05, y, Math.cos(i * 1.3) * 0.05], jitter: 0.03, jitterSeed: i });
+    }
+    // thorns along stem
+    const nt = p['thorns']!;
+    for (let i = 0; i < nt; i++) {
+      const a = i * 2.4;
+      const y = 0.3 + (i / Math.max(1, nt)) * H;
+      b.add(new ConeGeometry(0.035, 0.22, 3), { color: 0xd8e8a0, pos: [Math.cos(a) * 0.15, y, Math.sin(a) * 0.15], rot: [Math.sin(a) * 1.4, 0, -Math.cos(a) * 1.4] });
+    }
+    // thorn-bow: a partial torus arc held in front, bending back as it charges + glowing string
+    const bowY = H * 0.78;
+    b.add(new TorusGeometry(0.62, 0.045, 4, 14, 2.3), {
+      color: 0x3f7a2a,
+      part: Part.Petal,
+      param: 0.35,
+      pos: [0.05, bowY, 0],
+      rot: [Math.PI / 2, 0, -2.3 / 2],
+      pivot: [0.3, bowY, 0],
+    });
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.06, 0.28, 3), { color: 0xd8e8a0, pos: [0.05 + Math.cos(1.15) * 0.62, bowY, z * Math.sin(1.15) * 0.62], rot: [z * 1.3, 0, 0] });
+    b.add(new BoxGeometry(0.02, 0.02, 1.15), { color: PAL.plantSap, emit: 0.8, part: Part.Recoil, param: 0.35, pos: [0.05 + Math.cos(1.15) * 0.62, bowY, 0] });
+    // leaves along the stem
+    for (const [y, a] of [[0.45, 0.3], [0.8, 2.6], [1.05, 4.4]] as const) {
+      b.add(new SphereGeometry(0.22, 5, 3), { color: 0x356b22, pos: [Math.cos(a) * 0.28, y, Math.sin(a) * 0.28], scale: [1.4, 0.12, 0.55], rot: [0, -a, 0.35], part: Part.Bob, param: 0.02 });
+    }
+    // flower head: petals open with charge, core glows
+    const top = H + 0.2;
+    const np = p['petals']!;
+    for (let i = 0; i < np; i++) {
+      const a = (i / np) * Math.PI * 2;
+      b.add(new ConeGeometry(0.12, p['petalLen']!, 3), {
+        color: i % 2 ? 0x7a1b4a : 0x4d8a2a,
+        emit: i % 2 ? 0.25 : 0,
+        part: Part.Petal,
+        param: p['bloom']!,
+        pos: [Math.cos(a) * 0.18, top + 0.18, Math.sin(a) * 0.18],
+        rot: [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5],
+        pivot: [0, top, 0],
+      });
+    }
+    b.add(new IcosahedronGeometry(0.15, 0), { color: PAL.plantSap, emit: 0.8, part: Part.Core, param: 0.8, pos: [0.04, top + 0.1, 0], pivot: [0.04, top + 0.1, 0] });
+    b.add(new SphereGeometry(0.06, 5, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.8, pos: [0.18, top + 0.12, 0], pivot: [0.18, top + 0.12, 0] });
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── shielder (crystal)
+const shielder: ModelDef = {
+  key: 'shielder',
+  name: 'Призма (кристалл, щит)',
+  height: 1.8,
+  rim: PAL.enemy,
+  params: { core: P(0.55, 0.3, 0.9), shards: P(4, 0, 8, 1), shieldArc: P(110, 40, 180, 1), shieldH: P(1.4, 0.6, 2) },
+  build(p) {
+    const b = new ModelBuilder();
+    const c = p['core']!;
+    b.add(new OctahedronGeometry(c, 0), { color: PAL.crystal, emit: 0.15, part: Part.Bob, param: 0.1, pos: [0, 1.05, 0], scale: [0.8, 1.5, 0.8] });
+    b.add(new OctahedronGeometry(c * 0.45, 0), { color: PAL.crystalBright, emit: 1, part: Part.Core, param: 0.6, pos: [0, 1.05, 0], pivot: [0, 1.05, 0] });
+    // base
+    b.add(new CylinderGeometry(0.45, 0.6, 0.18, 6), { color: 0x262a40, pos: [0, 0.09, 0] });
+    b.add(new CylinderGeometry(0.47, 0.47, 0.04, 6), { color: PAL.enemy, emit: 0.8, pos: [0, 0.2, 0] });
+    // orbiting shards
+    const ns = p['shards']!;
+    for (let i = 0; i < ns; i++) {
+      const a = (i / Math.max(1, ns)) * Math.PI * 2;
+      b.add(new TetrahedronGeometry(0.14, 0), { color: PAL.crystalBright, emit: 0.5, part: Part.Spin, param: 2.2, pos: [Math.cos(a) * 0.9, 1.25 + Math.sin(a * 2) * 0.2, Math.sin(a) * 0.9], pivot: [0, 1, 0] });
+    }
+    // front shield: arc of panels centred on +x
+    const arc = p['shieldArc']! * D2R;
+    const n = 7;
+    const R = 1.15;
+    for (let i = 0; i < n; i++) {
+      const a = (i / (n - 1) - 0.5) * arc;
+      b.add(new BoxGeometry(0.06, p['shieldH']!, (arc * R) / n * 0.92), {
+        color: 0x8fa6ff,
+        emit: 0.55,
+        part: Part.Shield,
+        param: 1,
+        pos: [Math.cos(a) * R, 0.25 + p['shieldH']! / 2, Math.sin(a) * R],
+        rot: [0, -a, 0],
+        pivot: [0, 1, 0],
+      });
+    }
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── boss
+const boss: ModelDef = {
+  key: 'boss',
+  name: 'МОНОЛИТ (босс)',
+  height: 5.5,
+  rim: PAL.energy,
+  params: { height: P(4.2, 3, 6), width: P(1.5, 1, 2.4), rings: P(3, 1, 5, 1), shards: P(10, 0, 20, 1), eye: P(0.6, 0.3, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const H = p['height']!;
+    const W = p['width']!;
+    const lift = 1.0;
+    // obelisk: stacked tapered hex prisms with glowing seams
+    const seg = 5;
+    for (let i = 0; i < seg; i++) {
+      const t0 = i / seg;
+      const t1 = (i + 1) / seg;
+      const r0 = W * (1 - t0 * 0.45);
+      const r1 = W * (1 - t1 * 0.45);
+      b.add(new CylinderGeometry(r1, r0, (H / seg) * 0.9, 6), { color: PAL.voidMat, part: Part.Jitter, param: 0.25, pos: [0, lift + (t0 + 0.5 / seg) * H, 0] });
+      b.add(new CylinderGeometry(r1 * 1.02, r1 * 1.02, (H / seg) * 0.1, 6), { color: PAL.energy, emit: 1, part: Part.Jitter, param: 0.25, pos: [0, lift + t1 * H - (H / seg) * 0.05, 0] });
+    }
+    b.add(new ConeGeometry(W * 0.55, 1.2, 6), { color: PAL.voidMat, pos: [0, lift + H + 0.6, 0] });
+    b.add(new ConeGeometry(W * 0.75, lift + 0.2, 6), { color: PAL.voidMat, pos: [0, (lift + 0.2) / 2, 0], rot: [Math.PI, 0, 0] });
+    // eye
+    b.add(new SphereGeometry(p['eye']!, 12, 8), { color: 0xffffff, emit: 1, part: Part.Core, param: 0.5, pos: [W * 0.7, lift + H * 0.62, 0], pivot: [W * 0.7, lift + H * 0.62, 0] });
+    b.add(new TorusGeometry(p['eye']! * 1.25, 0.08, 4, 16), { color: PAL.enemy, emit: 1, pos: [W * 0.72, lift + H * 0.62, 0], rot: [0, Math.PI / 2, 0] });
+    // rings
+    const nr = p['rings']!;
+    for (let i = 0; i < nr; i++) {
+      const r = W * (1.6 + i * 0.45);
+      b.add(new TorusGeometry(r, 0.09, 4, 32), {
+        color: i % 2 ? PAL.enemy : PAL.energy,
+        emit: 1,
+        part: Part.Spin,
+        param: (i % 2 ? -1 : 1) * (0.6 + i * 0.35),
+        pos: [0, lift + H * (0.3 + i * 0.2), 0],
+        rot: [Math.PI / 2 + 0.25 * (i - 1), 0, 0.2 * i],
+        pivot: [0, lift + H * 0.5, 0],
+      });
+    }
+    // orbiting shards
+    const ns = p['shards']!;
+    for (let i = 0; i < ns; i++) {
+      const a = (i / Math.max(1, ns)) * Math.PI * 2;
+      const r = W * 2.4 + (i % 3) * 0.4;
+      b.add(new OctahedronGeometry(0.22, 0), { color: i % 3 ? PAL.voidMat : PAL.energy, emit: i % 3 ? 0.1 : 1, part: Part.Spin, param: 0.8 + (i % 3) * 0.2, pos: [Math.cos(a) * r, lift + 0.8 + (i % 4) * 0.9, Math.sin(a) * r], scale: [0.6, 1.6, 0.6], pivot: [0, 0, 0] });
+    }
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── arena props
+const pillar: ModelDef = {
+  key: 'pillar',
+  name: 'Колонна арены',
+  height: 1.7,
+  rim: PAL.energy,
+  params: { height: P(1.7, 0.6, 6), bands: P(2, 0, 6, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const H = p['height']!;
+    b.add(new CylinderGeometry(1, 1.08, H, 6), { color: 0x181428, pos: [0, H / 2, 0] });
+    b.add(new CylinderGeometry(0.85, 1, 0.3, 6), { color: 0x221c38, pos: [0, H + 0.15, 0] });
+    const n = p['bands']!;
+    for (let i = 0; i < n; i++) {
+      const y = 0.35 + (i / Math.max(1, n)) * (H - 0.6);
+      b.add(new CylinderGeometry(1.015, 1.015, 0.06, 6), { color: i === 0 ? PAL.player : PAL.energy, emit: 1, pos: [0, y, 0] });
+    }
+    b.add(new CylinderGeometry(0.4, 0.4, 0.05, 6), { color: PAL.energy, emit: 1, part: Part.Core, param: 0.2, pos: [0, H + 0.31, 0], pivot: [0, H + 0.31, 0] });
+    return b.build();
+  },
+};
+
+export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, boss, pillar];
+/** enemy type index → model (matches ET order) */
+export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss];
+
+export function modelByKey(key: string): ModelDef {
+  const m = MODELS.find((x) => x.key === key);
+  if (!m) throw new Error(`unknown model ${key}`);
+  return m;
+}
+
+/** Runtime overrides (lab edits persist via localStorage in dev). */
+export const modelOverrides: Record<string, Params> = {};
+export function paramsFor(def: ModelDef): Params {
+  return { ...defaults(def), ...(modelOverrides[def.key] ?? {}) };
+}

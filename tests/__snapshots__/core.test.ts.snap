@@ -1,0 +1,11 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Rng > golden sequence (guards against accidental algorithm changes) 1`] = `
+[
+  1412780458,
+  2987940632,
+  2018378644,
+]
+`;
+
+exports[`Rng > golden sequence (guards against accidental algorithm changes) 2`] = `0.6270739405881613`;
