@@ -4,7 +4,9 @@ import { AS, ARENA_HH, ARENA_HW, BK, ET, Mat, MAX_LASERS, Team, WP } from '../si
 import { enemyDef } from '../sim/content/enemies';
 import { MUTATORS } from '../sim/content/mutators';
 import { weaponDef } from '../sim/content/weapons';
-import type { World } from '../sim/world';
+import { WavePhase, type World } from '../sim/world';
+import { TRANS_SYNTH } from '../sim/systems/waves';
+import { SYNTH_SPEED } from './entities';
 import type { AudioEngine } from '../audio/audio';
 import type { SfxId } from '../audio/sfx';
 import type { CameraRig } from './camera';
@@ -56,6 +58,12 @@ const C_ENERGY = new Float32Array(3);
 const C_PICK = new Float32Array(3);
 const C_MUT = new Float32Array(3);
 const C_PUS = new Float32Array([0.9, 2.4, 0.3]);
+const C_FLESH = new Float32Array([2.6, 0.18, 0.4]);
+const C_GORE = new Float32Array([0.24, 0.005, 0.012]);
+const C_SOIL = new Float32Array([0.06, 0.02, 0.02]);
+const C_DUST = new Float32Array([0.035, 0.018, 0.02]);
+const K_WHITE = new Float32Array([3, 3, 3]);
+const C_OLD = new Float32Array(3);
 const C_RARE = [new Float32Array(3), new Float32Array(3), new Float32Array(3), new Float32Array(3)] as const;
 lin(PAL.player, C_PLAYER);
 lin(PAL.enemy, C_ENEMY);
@@ -63,6 +71,7 @@ lin(PAL.enemyBullet, C_ENEMY_B);
 lin(PAL.hazard, C_HAZ);
 lin(PAL.energy, C_ENERGY);
 lin(PAL.pickup, C_PICK);
+lin(PAL.player, C_OLD);
 lin(0x2ef2ff, C_RARE[0]);
 lin(0x5cff9b, C_RARE[1]);
 lin(0xb36bff, C_RARE[2]);
@@ -490,7 +499,7 @@ export class FxDirector {
           this.muzzleFx(x, y, a, b, c);
           break;
         case Ev.EnemyShoot: {
-          const big = b === ET.Boss;
+          const big = b === ET.Boss || b === ET.Brood;
           this.timed(QK.Flash, QM.Billboard, x, 1, y, this.rng.float() * TAU, big ? 3.5 : 1.4, big ? 3.5 : 1.4, C_ENEMY_B, 2, 0.08);
           this.d.lights.flash(x, y, 1, big ? 9 : 4, C_ENEMY[0]! * 4, C_ENEMY[1]! * 4, C_ENEMY[2]! * 4, 0.1);
           this.burst(4, x, 1, y, a, 0.6, 5, 12, 1, 0.12, C_ENEMY_B, 3, 0.08, 6, 0, PS.Spark, 0);
@@ -726,6 +735,68 @@ export class FxDirector {
           this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 3, 3, C_PICK, 3, 0.35);
           this.burst(16, x, 0.6, y, 0, TAU, 2, 6, 4, 0.5, C_PICK, 3, 0.12, 3, 0, PS.Glow, 0);
           this.sfx('pickup', x, y, 0.6);
+          break;
+        case Ev.ActTransition:
+          // "карантин снят": the archive starts decompiling the sector
+          J.addGlitch(1.4);
+          J.addChroma(1.2);
+          J.doFlash(0.25, 0.3, 0.9, 1);
+          this.wave(0, 0, 1.5);
+          this.d.floor.ripple(0, 0, 2.5);
+          this.sfx('decompile', 0, Number.NaN, 0.9, 1, 1);
+          this.d.audio?.duck(0.6, 2.5);
+          break;
+        case Ev.ActSynth: {
+          // the matter core detonates outward — the new sector is written into the world
+          J.doFlash(0.85, 1, 0.25, 0.35);
+          J.addTrauma(1);
+          J.addGlitch(1.2);
+          J.addChroma(1.6);
+          J.slow(0.3, 0.7);
+          J.saturate = 1;
+          this.wave(0, 0, 2.5);
+          this.d.floor.ripple(0, 0, 3);
+          this.d.floor.decals.clear();
+          this.timed(QK.Ring, QM.Ground, 0, 0.1, 0, 0, 90, 90, C_FLESH, 3, 1.4);
+          this.timed(QK.Ring, QM.Ground, 0, 0.1, 0, 0, 40, 40, K_WHITE, 1, 0.6);
+          this.timed(QK.Flash, QM.Billboard, 0, 3, 0, 0, 16, 16, C_FLESH, 2, 0.35);
+          this.burst(220, 0, 3, 0, 0, TAU, 8, 34, 10, 1.6, C_FLESH, 2.5, 0.25, 1.2, 10, PS.Spark, 0);
+          this.burst(160, 0, 3, 0, 0, TAU, 4, 22, 12, 2.2, C_GORE, 1, 0.35, 1.2, 26, PS.Blood, 1);
+          this.burst(80, 0, 3, 0, 0, TAU, 2, 16, 6, 2.5, K_WHITE, 2, 0.18, 1.5, 4, PS.Pixel, 0);
+          this.d.lights.flash(0, 0, 4, 60, 30, 3, 6, 1.2);
+          this.sfx('synth_boom', 0, Number.NaN, 1, 1, 1);
+          break;
+        }
+        case Ev.WormBurrow:
+          this.burst(28, x, 0.3, y, 0, TAU, 2, 7, 6, 0.9, C_SOIL, 1, 0.22, 2, 24, PS.Shard, 1);
+          this.burst(12, x, 0.4, y, 0, TAU, 1, 4, 3, 0.8, C_GORE, 1, 0.16, 2, 22, PS.Blood, 1);
+          this.burst(10, x, 0.3, y, 0, TAU, 0.5, 2, 1, 1.6, C_DUST, 1, 1.1, 1.5, -0.3, PS.Smoke, 0.6);
+          this.d.floor.decals.add(x, y, 2.2, this.rng.float() * TAU, 0.03, 0.006, 0.006, 0.85, 1, this.rng.float() * 100);
+          this.sfx('worm_dig', x, y, 0.7, 1, 0.06, 4);
+          break;
+        case Ev.WormEmerge: {
+          // eruption: soil, blood and a shock ring — readable, punchy, dodgeable
+          const R = a;
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, R * 3.2, R * 3.2, C_FLESH, 2.5, 0.4);
+          this.timed(QK.Flash, QM.Billboard, x, 0.8, y, 0, R * 2.4, R * 2.4, C_FLESH, 1.5, 0.12);
+          this.burst(46, x, 0.2, y, 0, TAU, 3, 11, 12, 1.1, C_SOIL, 1, 0.26, 1.5, 26, PS.Shard, 1);
+          this.burst(30, x, 0.4, y, 0, TAU, 2, 8, 10, 1.1, C_GORE, 1, 0.2, 1.5, 26, PS.Blood, 1);
+          this.burst(14, x, 0.3, y, 0, TAU, 1, 4, 2, 1.8, C_DUST, 1, 1.4, 1.3, -0.4, PS.Smoke, 0.7);
+          this.d.floor.decals.add(x, y, R * 1.9, this.rng.float() * TAU, 0.05, 0.004, 0.008, 0.9, 0, this.rng.float() * 100);
+          this.d.floor.ripple(x, y, 1.2);
+          this.wave(x, y, 0.7);
+          J.addTrauma(0.3);
+          this.sfx('worm_burst', x, y, 0.9, 1, 0.05, 4);
+          break;
+        }
+        case Ev.Birth:
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 9, 9, C_PUS, 1.6, 0.6);
+          this.burst(70, x, 2.4, y, 0, TAU, 3, 12, 8, 1.4, C_GORE, 1, 0.24, 1.5, 24, PS.Blood, 1);
+          this.burst(40, x, 2.4, y, 0, TAU, 2, 9, 6, 1.0, C_PUS, 1, 0.16, 1.5, 18, PS.Blood, 0.4);
+          this.d.floor.decals.add(x, y, 6, this.rng.float() * TAU, 0.08, 0.003, 0.01, 0.9, 0, this.rng.float() * 100);
+          J.addTrauma(0.35);
+          this.wave(x, y, 0.9);
+          this.sfx('brood_birth', x, y, 1, 1, 0.3);
           break;
         case Ev.Telegraph:
           this.timed(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, a * 2, a * 2, C_ENEMY, 2.5, b, 1);
@@ -998,6 +1069,21 @@ export class FxDirector {
           P.emit(x + Math.cos(pa) * 0.8, 2, y + Math.sin(pa) * 0.8, 0, 0.5, 0, 0.4, 3, 2.5, 0.5, 0.12, 1, 0, PS.Pixel, 0);
         }
       }
+      if (type === ET.Worm && (st === AS.Underground || st === AS.Windup)) {
+        // the floor heaves over the burrower; cracks glow; soil spits behind it
+        const warn = st === AS.Windup;
+        const sz = warn ? 2.6 + ch * 1.4 : 2.2;
+        Qb.push(QK.Mound, QM.Ground, x, 0.05, y, E.face[i]!, sz, sz, C_FLESH[0]! * 1.2, C_FLESH[1]! * 1.2, C_FLESH[2]! * 1.2, 1, warn ? ch : 0.2, i * 0.37);
+        if (warn) Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 3.8, 3.8, C_ENEMY[0]! * 2.4, C_ENEMY[1]! * 2.4, C_ENEMY[2]! * 2.4, 0, ch, i);
+        if (r.chance(warn ? 0.9 : 0.6)) {
+          const ba = E.face[i]! + Math.PI + r.sym() * 0.8;
+          P.emit(x, 0.15, y, Math.cos(ba) * r.range(1, 4), r.range(2, 5), Math.sin(ba) * r.range(1, 4), 0.8, C_SOIL[0]!, C_SOIL[1]!, C_SOIL[2]!, 0.16, 1.5, 22, PS.Shard, 1);
+        }
+        if (r.chance(0.35)) P.emit(x, 0.1, y, r.sym(), 0.4, r.sym(), 1.2, C_DUST[0]!, C_DUST[1]!, C_DUST[2]!, 0.8, 1.5, -0.2, PS.Smoke, 0.5);
+        if (!warn && (w.tick + i) % 6 === 0) this.d.floor.decals.add(x, y, 1.1, -E.face[i]!, 0.035, 0.008, 0.008, 0.45, 2, r.float() * 100, 1.2);
+        if (warn) this.d.juice.addTrauma(dt * 0.4);
+        continue;
+      }
       // elite aura motes
       if (E.affix[i] && r.chance(0.25)) P.emit(x + r.sym() * def.r, 0.2, y + r.sym() * def.r, 0, r.range(1, 3), 0, 0.6, 1.5, 2.2, 0.3, 0.1, 1, 0, PS.Ember, 0);
       // heavily wounded flesh drips
@@ -1088,8 +1174,83 @@ export class FxDirector {
       Qb.push(QK.Pickup, QM.Billboard, x, 0.6 + Math.sin(time * 4 + i) * 0.12, y, 0, 0.9, 0.9, C_PICK[0]! * 3 * blink, C_PICK[1]! * 3 * blink, C_PICK[2]! * 3 * blink, 0, 0, i);
       L.add(x, y, 0.8, 3.5, C_PICK[0]! * 1.5, C_PICK[1]! * 1.5, C_PICK[2]! * 1.5);
     }
+    if (w.wave.phase === WavePhase.Transition) this.transitionFx(w, w.wave.t + alpha / 60, dt, time);
     L.endFrame();
     Qb.end(time);
+  }
+
+  /**
+   * Act transition choreography (render-only; the sim just runs a timer):
+   *  0 – 1.6 s   DECOMPILE  scan ring sweeps out, the old sector lifts off the floor as pixels
+   *  1.6 – 4.6   TRANSFER   matter from the whole arena spirals into a core above the centre
+   *  4.6 →       SYNTHESIS  core detonates (ActSynth event); a crimson front writes the flesh
+   *                         sector outward, growths sprout and embers rise along the seam
+   */
+  private transitionFx(_w: World, t: number, dt: number, time: number): void {
+    const P = this.d.particles;
+    const Qb = this.d.quads;
+    const L = this.d.lights;
+    const J = this.d.juice;
+    const r = this.rng;
+    const SYN = TRANS_SYNTH;
+    if (t < 1.6) {
+      const R = t * 24;
+      for (let k = 0; k < 26; k++) {
+        const a = r.float() * TAU;
+        const rr = R + r.sym() * 1.2;
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr;
+        if (Math.abs(x) > ARENA_HW || Math.abs(y) > ARENA_HH) continue;
+        const k2 = r.float();
+        P.emit(x, 0.05, y, r.sym() * 0.6, r.range(3, 9), r.sym() * 0.6, r.range(0.8, 1.6), (k2 < 0.6 ? C_OLD[0]! : 1.2) * 3, (k2 < 0.6 ? C_OLD[1]! : 0.5) * 3, (k2 < 0.6 ? C_OLD[2]! : 1.5) * 3, r.range(0.08, 0.18), 0.6, -1.5, PS.Pixel, 0);
+      }
+      J.glitch = Math.max(J.glitch, 0.35);
+    }
+    if (t >= 1.2 && t < SYN) {
+      const f = Math.min(1, (t - 1.2) / (SYN - 1.2));
+      // matter streams inward, colour turning from old cyan to new crimson
+      const n = 30 + Math.floor(f * 50);
+      for (let k = 0; k < n; k++) {
+        const a = r.float() * TAU;
+        const rr = r.range(6, 38);
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr * 0.75;
+        const life = r.range(0.6, 1.3);
+        const sw = 0.5; // swirl: aim slightly off-centre so streams spiral
+        const tx = Math.cos(a + sw) * 0.8;
+        const ty = Math.sin(a + sw) * 0.8;
+        const h0 = r.range(0.1, 1.5);
+        const cr = C_OLD[0]! + (C_FLESH[0]! - C_OLD[0]!) * f;
+        const cg = C_OLD[1]! + (C_FLESH[1]! - C_OLD[1]!) * f;
+        const cb = C_OLD[2]! + (C_FLESH[2]! - C_OLD[2]!) * f;
+        P.emit(x, h0, y, (tx - x) / life, (3 - h0) / life, (ty - y) / life, life, cr * 2.2, cg * 2.2, cb * 2.2, r.range(0.07, 0.15), 0.001, 0, k & 1 ? PS.Spark : PS.Pixel, 0);
+      }
+      // the core: a dense, rotating knot of matter above the centre
+      const s = 0.6 + f * 4.2 + Math.sin(time * 18) * 0.15 * f;
+      Qb.push(QK.Orb, QM.Billboard, 0, 3, 0, 0, s, s, 2 + f * 2, 0.3 + f * 0.3, 0.8 + (1 - f) * 2, 0, 0, 7);
+      Qb.push(QK.Flash, QM.Billboard, 0, 3, 0, time * 3, s * 1.8, s * 1.8, C_FLESH[0]! * f, C_FLESH[1]! * f + 0.4 * (1 - f), C_FLESH[2]! * f + 1.2 * (1 - f), 0, 0.5, 3);
+      Qb.push(QK.Vortex, QM.Ground, 0, 0.1, 0, -time * 2.5, 5 + f * 9, 5 + f * 9, 1.2 + f, 0.2, 1.5 - f, 0.5, 0, 5);
+      L.add(0, 0, 3, 14 + f * 20, 2 + f * 10, 0.6 + f, 3 * (1 - f) + f * 2);
+      this.d.camera.focus(0, 0, 0.3);
+      J.addTrauma(dt * f * 0.6);
+      J.glitch = Math.max(J.glitch, 0.15 + f * 0.4);
+      if (Math.floor((t - dt) * 4) !== Math.floor(t * 4)) this.timed(QK.Ring, QM.Billboard, 0, 3, 0, 0, s * 2.5, s * 2.5, C_FLESH, 1.5, 0.35);
+    }
+    if (t >= SYN) {
+      // embers and spatter ride the synthesis seam
+      const R = (t - SYN) * SYNTH_SPEED;
+      if (R < 50) {
+        for (let k = 0; k < 24; k++) {
+          const a = r.float() * TAU;
+          const x = Math.cos(a) * R;
+          const y = Math.sin(a) * R;
+          if (Math.abs(x) > ARENA_HW || Math.abs(y) > ARENA_HH) continue;
+          P.emit(x, 0.1, y, Math.cos(a) * 2, r.range(1, 4), Math.sin(a) * 2, r.range(0.5, 1.1), C_FLESH[0]! * 1.5, C_FLESH[1]! * 1.5, C_FLESH[2]! * 1.5, r.range(0.08, 0.16), 1, 0, PS.Ember, 0);
+          if (k < 4) P.emit(x, 0.2, y, Math.cos(a) * 3, r.range(2, 5), Math.sin(a) * 3, 1, C_GORE[0]!, C_GORE[1]!, C_GORE[2]!, 0.16, 1, 20, PS.Blood, 1);
+        }
+        L.add(Math.cos(time) * R * 0.5, Math.sin(time) * R * 0.5, 1, 12, 4, 0.3, 0.6);
+      }
+    }
   }
 
   private addCombo(): void {

@@ -48,11 +48,11 @@ export function integrate(w: World, i: number, dvx: number, dvy: number): void {
   // separation
   let sx = 0;
   let sy = 0;
-  if (E.type[i] !== ET.Boss) {
+  if (E.type[i] !== ET.Boss && E.st[i] !== AS.Underground) {
     const n = w.grid.query(x, y, r + 1.6, w.qbuf);
     for (let k = 0; k < n; k++) {
       const j = w.qbuf[k]!;
-      if (j === i || !E.alive[j] || E.st[j] === AS.Spawning) continue;
+      if (j === i || !E.alive[j] || E.st[j] === AS.Spawning || E.st[j] === AS.Underground || E.st[j] === AS.Attached) continue;
       const ox = x - E.x[j]!;
       const oy = y - E.y[j]!;
       const rr = r + E.r[j]! + 0.25;

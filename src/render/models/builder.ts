@@ -15,6 +15,7 @@ export const Part = {
   Core: 6, // scales/pulses with charge around pivot, param = amount
   Shield: 7, // ripples on hit
   Recoil: 8, // slides back along -X with recoil/charge, param = distance
+  Wiggle: 9, // serpentine lateral wave travelling along -X (worms, tentacles), param = amplitude
 } as const;
 
 export interface PartOpts {

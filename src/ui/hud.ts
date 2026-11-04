@@ -3,9 +3,27 @@ import { ET } from '../sim/constants';
 import { MUTATORS } from '../sim/content/mutators';
 import { RARITY_NAMES, weaponDef } from '../sim/content/weapons';
 import { UPGRADES } from '../sim/content/upgrades';
-import { WAVES } from '../sim/content/waves';
+import { ACT_NAMES, actWave, WAVES } from '../sim/content/waves';
+import { enemyDef } from '../sim/content/enemies';
 import { WavePhase, type World } from '../sim/world';
 import { hexCss, RARITY_HEX } from '../render/palette';
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
+
+/** Archive terminal lines per act transition: [seconds, text] */
+const LORE: Record<number, readonly (readonly [number, string])[]> = {
+  1: [
+    [0.2, '> МОНОЛИТ: целостность 0%'],
+    [0.9, '> карантин NULL снят'],
+    [1.6, '> декомпиляция сектора ......... 100%'],
+    [2.6, '> перенос материи → ядро синтеза'],
+    [3.6, '> доступ: архив «ПЛОТЬ» · образцов: 4 112'],
+    [4.7, '> синтез среды ████████████ ok'],
+    [5.7, '> реставрация процесса «Вектор»: +40%'],
+    [6.6, '> МОНОЛИТ был лишь стражем. ядро глубже.'],
+    [7.6, '> итерация #{seed} продолжается_'],
+  ],
+};
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document): T => {
   const e = root.querySelector<T>(sel);
@@ -27,6 +45,13 @@ export class Hud {
   private readonly weapons: HTMLElement;
   private readonly boss: HTMLElement;
   private readonly bossFill: HTMLElement;
+  private readonly bossName: HTMLElement;
+  private bossWho = -2;
+  private readonly log: HTMLElement;
+  private logLines: readonly (readonly [number, string])[] = [];
+  private logT = -1;
+  private logFor = -1;
+  private logShown = '';
   private readonly banner: HTMLElement;
   private readonly comboEl: HTMLElement;
   private readonly comboNum: HTMLElement;
@@ -48,7 +73,7 @@ export class Hud {
         <div class="dash">РЫВОК <span><i></i></span></div>
       </div>
       <div class="hud-tr"><div class="wave"></div><div class="score"></div><div class="combo hidden"><b></b><span>КОМБО</span><i><u></u></i></div><div class="mut hidden"></div></div>
-      <div class="boss hidden"><div class="name">МОНОЛИТ</div><div class="bar"><i></i><div class="ticks"></div></div></div>
+      <div class="lore-log hidden"></div><div class="boss hidden"><div class="name">МОНОЛИТ</div><div class="bar"><i></i><div class="ticks"></div></div></div>
       <div class="weapons"></div>
       <div class="banner"></div>
       <div class="screen clear upgrade hidden"><div class="col"><div class="sub">ВЫБЕРИ МОДУЛЬ</div><div class="ups"></div></div></div>`;
@@ -65,6 +90,8 @@ export class Hud {
     this.weapons = $('.weapons', root);
     this.boss = $('.boss', root);
     this.bossFill = $('.boss .bar > i', root);
+    this.bossName = $('.boss .name', root);
+    this.log = $('.lore-log', root);
     this.banner = $('.banner', root);
     this.upgrade = $('.upgrade', root);
     this.comboEl = $('.combo', root);
@@ -87,7 +114,17 @@ export class Hud {
         const idx = d[o + 1]! - 1;
         const def = WAVES[idx];
         const boss = d[o + 3]! > 0.5;
-        this.showBanner(boss ? 'МОНОЛИТ' : `ВОЛНА ${idx + 1}`, def?.name.toUpperCase() ?? '', boss ? '#9b5cff' : '#2ef2ff', 2.2);
+        const aw = actWave(idx);
+        const flesh = aw.act === 1;
+        const col = boss ? (flesh ? '#ff2d7a' : '#9b5cff') : flesh ? '#ff6a7a' : '#2ef2ff';
+        this.showBanner(boss ? (def?.name ?? 'БОСС') : `ВОЛНА ${aw.n}`, boss ? `АКТ ${ROMAN[aw.act]} · ФИНАЛ` : (def?.name.toUpperCase() ?? ''), col, 2.2);
+        break;
+      }
+      case Ev.ActTransition:
+        break; // the log is started from update() when the transition phase is seen
+      case Ev.ActSynth: {
+        const act = d[o + 3]!;
+        this.showBanner(`АКТ ${ROMAN[act]}`, ACT_NAMES[act] ?? '', act === 1 ? '#ff2d4a' : '#2ef2ff', 3.2);
         break;
       }
       case Ev.WaveClear:
@@ -130,10 +167,20 @@ export class Hud {
     }
     const W = w.wave;
     const left = Math.max(0, W.totalThisWave - W.killedThisWave);
-    const waveKey = w.mode === 'sandbox' ? -2 : W.index * 10000 + left;
+    const inTrans = W.phase === WavePhase.Transition;
+    const waveKey = w.mode === 'sandbox' ? -2 : inTrans ? -3 - W.index : W.index * 10000 + left;
+    if (inTrans && this.logT < 0 && this.logFor !== W.index) {
+      this.logFor = W.index;
+      this.startLog(WAVES[W.index]?.act ?? 1);
+      this.logT = W.t;
+    }
     if (waveKey !== L.wave) {
       if (w.mode === 'sandbox') this.waveEl.innerHTML = `ПЕСОЧНИЦА<small>отладка</small>`;
-      else this.waveEl.innerHTML = `ВОЛНА ${W.index + 1}<small>${WAVES.length} ВСЕГО · ВРАГОВ: ${left}</small>`;
+      else if (inTrans) this.waveEl.innerHTML = `СИНТЕЗ СЕКТОРА<small>АРХИВ «${ACT_NAMES[WAVES[W.index]?.act ?? 1]}»</small><small class="iter">ИТЕРАЦИЯ #${w.seed}</small>`;
+      else {
+        const aw = actWave(W.index);
+        this.waveEl.innerHTML = `ВОЛНА ${aw.n}/${aw.total}<small>АКТ ${ROMAN[aw.act]} · ${ACT_NAMES[aw.act]} · ВРАГОВ: ${left}</small><small class="iter">ИТЕРАЦИЯ #${w.seed}</small>`;
+      }
       L.wave = waveKey;
     }
     if (w.stats.score !== L.score) {
@@ -164,8 +211,13 @@ export class Hud {
       this.weapons.innerHTML = h;
       L.slots = slots;
     }
-    const bi = w.boss.id;
-    const bossF = bi >= 0 && w.enemies.alive[bi] && w.enemies.type[bi] === ET.Boss ? w.enemies.hp[bi]! / w.enemies.maxHp[bi]! : -1;
+    let bi = w.boss.id;
+    if (!(bi >= 0 && w.enemies.alive[bi] && w.enemies.type[bi] === ET.Boss)) bi = w.miniBoss;
+    const bossF = bi >= 0 && w.enemies.alive[bi] ? w.enemies.hp[bi]! / w.enemies.maxHp[bi]! : -1;
+    if (bi !== this.bossWho) {
+      this.bossWho = bi;
+      if (bi >= 0) this.bossName.textContent = enemyDef(w.enemies.type[bi]!).name;
+    }
     const bq = Math.round(bossF * 400) / 400;
     if (bq !== L.boss) {
       this.boss.classList.toggle('hidden', bossF < 0);
@@ -193,6 +245,7 @@ export class Hud {
       }
       L.offer = offer;
     }
+    this.updateLog(dt, w.seed);
     if (this.bannerT > 0) {
       this.bannerT -= dt;
       if (this.bannerT <= 0) this.banner.innerHTML = '';
@@ -219,7 +272,41 @@ export class Hud {
     if (n >= 3) this.comboBar.style.transform = `scaleX(${Math.max(0, left01).toFixed(3)})`;
   }
 
+  /** terminal log of the archive, typed out during an act transition */
+  startLog(act: number): void {
+    this.logLines = LORE[act] ?? [];
+    this.logT = 0;
+    this.logShown = '';
+    this.log.classList.remove('hidden', 'out');
+  }
+
+  private updateLog(dt: number, seed: number): void {
+    if (this.logT < 0) return;
+    this.logT += dt;
+    const CPS = 46; // characters per second
+    let out = '';
+    for (const [at, text0] of this.logLines) {
+      if (this.logT < at) break;
+      const text = text0.replace('{seed}', String(seed));
+      const n = Math.min(text.length, Math.floor((this.logT - at) * CPS));
+      out += text.slice(0, n) + (n < text.length ? '█' : '') + '\n';
+    }
+    if (out !== this.logShown) {
+      this.log.textContent = out;
+      this.logShown = out;
+    }
+    if (this.logT > 9.5) this.log.classList.add('out');
+    if (this.logT > 10.5) {
+      this.log.classList.add('hidden');
+      this.logT = -1;
+    }
+  }
+
   reset(): void {
+    this.logT = -1;
+    this.logFor = -1;
+    this.log.classList.add('hidden');
+    this.bossWho = -2;
     this.last = { hp: -1, max: -1, dash: -1, wave: -1, score: -1, mut: -1, slots: -1, boss: -1, offer: -1 };
     this.banner.innerHTML = '';
     this.bannerT = 0;

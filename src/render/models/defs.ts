@@ -415,9 +415,150 @@ const dart: ModelDef = {
   },
 };
 
-export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, bloater, dart, boss, pillar];
+// ───────────────────────────────────────── worm (flesh burrower)
+const worm: ModelDef = {
+  key: 'worm',
+  name: 'Червь (плоть, роет)',
+  height: 1.0,
+  rim: PAL.enemy,
+  params: { segments: P(7, 4, 12, 1), girth: P(0.42, 0.25, 0.6), teeth: P(9, 5, 14, 1), wiggle: P(0.16, 0, 0.4) },
+  build(p) {
+    const b = new ModelBuilder();
+    const n = p['segments']!;
+    const R = p['girth']!;
+    const cy = R + 0.05;
+    let x = 0.15;
+    for (let k = 0; k < n; k++) {
+      const t = k / Math.max(1, n - 1);
+      const r = R * (1 - t * 0.55);
+      const wig = { part: Part.Wiggle, param: p['wiggle']! * (0.3 + t), pivot: [x, cy, 0] as const };
+      b.add(new IcosahedronGeometry(r, 1), { color: k % 2 ? 0xb46a6e : 0x8a3a48, pos: [x, cy * (1 - t * 0.35), 0], scale: [0.85, 0.82, 1], jitter: 0.05, jitterSeed: k, ...wig });
+      if (k > 0 && k < n - 1) b.add(new TorusGeometry(r * 0.92, 0.035, 3, 10), { color: PAL.enemy, emit: 0.35, pos: [x + r * 0.45, cy * (1 - t * 0.35), 0], rot: [0, Math.PI / 2, 0], ...wig });
+      x -= r * 1.35;
+    }
+    // lamprey maw: ring of teeth that splays open with charge, glowing throat
+    const mx = 0.15 + R * 0.75;
+    const nt = p['teeth']!;
+    for (let k = 0; k < nt; k++) {
+      const a = (k / nt) * Math.PI * 2;
+      b.add(new ConeGeometry(0.05, 0.28, 3), {
+        color: 0xeadcc0,
+        part: Part.Petal,
+        param: 0.9,
+        pos: [mx + 0.05, cy + Math.sin(a) * R * 0.62, Math.cos(a) * R * 0.62],
+        rot: [a, 0, -Math.PI / 2 - 0.5],
+        pivot: [mx - 0.1, cy, 0],
+      });
+    }
+    b.add(new SphereGeometry(R * 0.45, 8, 6), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.6, pos: [mx - 0.05, cy, 0], pivot: [mx - 0.05, cy, 0] });
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── parasite (tick)
+const parasite: ModelDef = {
+  key: 'parasite',
+  name: 'Паразит (плоть, носитель)',
+  height: 0.55,
+  rim: PAL.enemy,
+  params: { body: P(0.3, 0.2, 0.45), legs: P(0.42, 0.2, 0.7) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['body']!;
+    b.add(new SphereGeometry(R, 8, 6), { color: 0x4a1a1c, pos: [0.1, 0.28, 0], scale: [1.1, 0.55, 0.95] });
+    // engorged abdomen: glows brighter as it feeds (charge/buff)
+    b.add(new SphereGeometry(R * 1.05, 8, 6), { color: 0xd8ff5a, emit: 0.55, part: Part.Core, param: 0.4, pos: [-R * 0.9, 0.32, 0], scale: [1.2, 0.8, 1], pivot: [-R * 0.9, 0.32, 0] });
+    b.add(new SphereGeometry(R * 0.08 + 0.03, 4, 3), { color: PAL.enemy, emit: 1, pos: [R * 1.1, 0.34, 0.08] });
+    b.add(new SphereGeometry(R * 0.08 + 0.03, 4, 3), { color: PAL.enemy, emit: 1, pos: [R * 1.1, 0.34, -0.08] });
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.035, 0.22, 3), { color: 0xd8c8b0, pos: [R * 1.25, 0.24, z * 0.06], rot: [0, 0, -Math.PI / 2 - 0.4], part: Part.Petal, param: 0.6, pivot: [R, 0.24, 0] });
+    const start = b.vertexCount;
+    for (let k = 0; k < 3; k++) {
+      const x = 0.25 - k * 0.2;
+      b.add(new ConeGeometry(0.025, p['legs']!, 3), { color: 0x2a0a0c, part: Part.Leg, param: 1.2, pos: [x, 0.16, R * 0.9], rot: [-1.1, 0, 0], pivot: [x, 0.26, R * 0.5] });
+    }
+    b.mirrorZ(start);
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── brood mother (mini-boss)
+const brood: ModelDef = {
+  key: 'brood',
+  name: 'МАТКА (мини-босс)',
+  height: 3.4,
+  rim: PAL.enemy,
+  params: { mass: P(2.2, 1.4, 3), eggs: P(22, 6, 40, 1), tentacles: P(8, 0, 14, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['mass']!;
+    const cy = R * 0.75;
+    // breathing / contracting body (Core with small param = subtle swell before a birth)
+    b.add(new IcosahedronGeometry(R, 2), { color: 0x8a4a52, part: Part.Core, param: 0.07, pivot: [0, cy, 0], pos: [0, cy, 0], scale: [1, 0.8, 1], jitter: 0.22, jitterSeed: 31 });
+    b.add(new IcosahedronGeometry(R * 0.7, 1), { color: 0x5a1a26, pos: [-R * 0.35, cy * 1.45, 0], scale: [1, 0.7, 1], jitter: 0.15, jitterSeed: 7, part: Part.Core, param: 0.05, pivot: [0, cy, 0] });
+    // eggs: swell and glow before a birth
+    const n = p['eggs']!;
+    for (let k = 0; k < n; k++) {
+      const a = k * 2.399;
+      const el = 0.15 + ((k * 0.61) % 1) * 1.1;
+      const ex = Math.cos(a) * Math.cos(el) * R * 0.98;
+      const ez = Math.sin(a) * Math.cos(el) * R * 0.98;
+      const ey = cy + Math.sin(el) * R * 0.78;
+      b.add(new SphereGeometry(0.16 + (k % 4) * 0.05, 6, 5), { color: k % 3 ? 0xd8ff5a : PAL.enemy, emit: 0.85, part: Part.Core, param: 0.55, pos: [ex, ey, ez], scale: [1, 1.3, 1], pivot: [ex, ey, ez] });
+    }
+    // maw facing the player (+x)
+    b.add(new TorusGeometry(0.55, 0.14, 5, 14), { color: 0x3a060c, pos: [R * 0.85, cy * 1.05, 0], rot: [0, Math.PI / 2, 0] });
+    b.add(new SphereGeometry(0.42, 8, 6), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.3, pos: [R * 0.8, cy * 1.05, 0], pivot: [R * 0.8, cy * 1.05, 0] });
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      b.add(new ConeGeometry(0.06, 0.35, 3), { color: 0xeadcc0, part: Part.Petal, param: 0.5, pos: [R * 0.95, cy * 1.05 + Math.sin(a) * 0.55, Math.cos(a) * 0.55], rot: [a, 0, -Math.PI / 2 - 0.6], pivot: [R * 0.8, cy * 1.05, 0] });
+    }
+    // tentacles writhing on the floor
+    const nt = p['tentacles']!;
+    for (let k = 0; k < nt; k++) {
+      const a = (k / Math.max(1, nt)) * Math.PI * 2 + 0.3;
+      for (let s = 0; s < 4; s++) {
+        const d = R * 0.9 + s * 0.5;
+        const x = Math.cos(a) * d;
+        const z = Math.sin(a) * d;
+        b.add(new IcosahedronGeometry(0.28 - s * 0.05, 0), { color: s % 2 ? 0x8a3a48 : 0x6a2232, pos: [x, 0.18, z], part: Part.Wiggle, param: 0.12 + s * 0.06, pivot: [x, 0.18, z] });
+      }
+    }
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── flesh growth pillar (Act II)
+const growth: ModelDef = {
+  key: 'growth',
+  name: 'Нарост (колонна Плоти)',
+  height: 2.1,
+  rim: PAL.enemy,
+  params: { lumps: P(4, 2, 7, 1), pustules: P(6, 0, 14, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const n = p['lumps']!;
+    let y = 0.35;
+    for (let k = 0; k < n; k++) {
+      const r = 1.05 - k * (0.55 / n);
+      b.add(new IcosahedronGeometry(r, 1), { color: k % 2 ? 0x6a2a34 : 0x502030, pos: [Math.sin(k * 1.7) * 0.15, y, Math.cos(k * 2.1) * 0.15], scale: [1, 0.7, 1], jitter: 0.25, jitterSeed: k * 3 });
+      y += r * 0.6;
+    }
+    const m = p['pustules']!;
+    for (let k = 0; k < m; k++) {
+      const a = k * 2.4;
+      const yy = 0.4 + (k / Math.max(1, m)) * (y - 0.6);
+      const rr = 0.95 - (yy / y) * 0.5;
+      b.add(new SphereGeometry(0.1 + (k % 3) * 0.04, 5, 4), { color: k % 2 ? 0xd8ff5a : PAL.enemy, emit: 0.9, part: Part.Core, param: 0.3, pos: [Math.cos(a) * rr, yy, Math.sin(a) * rr], pivot: [Math.cos(a) * rr, yy, Math.sin(a) * rr] });
+    }
+    // glowing vein ring at the base
+    b.add(new TorusGeometry(1.05, 0.05, 3, 18), { color: PAL.enemy, emit: 0.7, pos: [0, 0.08, 0], rot: [Math.PI / 2, 0, 0] });
+    return b.build();
+  },
+};
+
+export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, bloater, dart, worm, parasite, brood, boss, pillar, growth];
 /** enemy type index → model (matches ET order) */
-export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss, bloater, dart];
+export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss, bloater, dart, worm, parasite, brood];
 
 export function modelByKey(key: string): ModelDef {
   const m = MODELS.find((x) => x.key === key);

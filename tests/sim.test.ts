@@ -126,9 +126,15 @@ describe('gameplay', () => {
     const s = new Scenario(2, 1, 'campaign', 9).player({ god: true, weapons: ['rail', 'pulse'] });
     s.upgrade('dmg').upgrade('dmg').upgrade('rate').upgrade('rate');
     const phases = new Set<number>();
-    s.input(Inputs.aimbot()).run(60 * 120, (w) => phases.add(w.boss.phase));
+    let killed = false;
+    s.input(Inputs.aimbot()).run(60 * 120, (w) => {
+      phases.add(w.boss.phase);
+      if (w.wave.index > 8 || w.wave.phase === WavePhase.Upgrade) killed = true;
+    });
     expect(phases.has(3)).toBe(true);
-    expect(s.world.wave.phase).toBe(WavePhase.Victory);
+    // the run continues into Act II instead of ending
+    expect(killed).toBe(true);
+    expect(s.world.wave.phase).not.toBe(WavePhase.Victory);
   });
   it('spawns respect type table', () => {
     const s = new Scenario(1).spawn('charger', 5, 5);

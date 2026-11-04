@@ -9,7 +9,7 @@ export const BED_SR = 24000;
 export const BED_LEN = 12;
 const FADE = 1.5;
 
-export const BEDS = ['room', 'tension', 'corrupt', 'cryo', 'gravity', 'drift', 'overclock', 'ricochet', 'stasis', 'calm'] as const;
+export const BEDS = ['room', 'tension', 'corrupt', 'cryo', 'gravity', 'drift', 'overclock', 'ricochet', 'stasis', 'calm', 'flesh'] as const;
 export type BedId = (typeof BEDS)[number];
 
 type Gen = (sr: number, dur: number, r: Rng, ch: number) => Buf;
@@ -107,6 +107,22 @@ const gens: Record<BedId, Gen> = {
     const b = new Buf(sr, dur);
     b.mix(lfoAmp(osc(sr, dur, { wave: 'tri', f0: 73.4 * (1 + ch * 0.004), detune: 10 }, r).lowpass(500), 0.75, 0.9, ch), 0, 0.2);
     for (let k = 0; k < 5; k++) b.mix(osc(sr, 2.2, { wave: 'saw', f0: 220 * (k % 2 ? 1.5 : 1), detune: 25 }, r).lowpass(1500).env(2, 0.2).reverse(), k * 2.4, 0.05);
+    return b;
+  },
+  // flesh sector: slow breathing, a giant distant heartbeat, wet shifting, viscous drips
+  flesh(sr, dur, r, ch) {
+    const b = new Buf(sr, dur);
+    // breathing: filtered noise swelling at ~0.25 Hz
+    b.mix(lfoAmp(noise(sr, dur, r).bandpass(250, 600, 0.7), 0.25, 0.9, ch * 0.5), 0, 0.3);
+    // heartbeat every 1.5 s (double thump)
+    for (let t = 0; t < dur; t += 1.5) {
+      const th = osc(sr, 0.25, { wave: 'sine', f0: 55, f1: 32 }, r).env(0.006, 2.4);
+      b.mix(th, t, 0.6);
+      b.mix(th, t + 0.28, 0.4);
+    }
+    // wet movement + drips (panned differently per ear)
+    for (let k = 0; k < 20; k++) b.mix(osc(sr, 0.08, { wave: 'sine', f0: r.range(500, 1100), f1: r.range(150, 300) }, r).env(0.002, 2), r.range(0, dur), 0.08);
+    b.mix(lfoAmp(noise(sr, dur, r).lowpass(90), 0.1, 0.5, ch), 0, 0.35);
     return b;
   },
   // calm: between waves / menus — airy, low pad wash

@@ -64,8 +64,12 @@ void main(){
     p = q + pv;
   } else if(part < 7.5 && part > 6.5){ // shield ripple when hit
     p += n * sin(p.y * 9.0 - uTime * 30.0) * 0.05 * iFx.x;
-  } else if(part > 7.5){ // recoil slide
+  } else if(part > 7.5 && part < 8.5){ // recoil slide
     p.x -= prm * charge;
+  } else if(part > 8.5){ // serpentine wiggle: whole segment shifts sideways, wave runs tail-ward
+    float ph = uTime * (6.0 + iAnim.y * 8.0) + pv.x * 2.4 + seed * 20.0;
+    p.z += sin(ph) * prm * (0.35 + iAnim.y);
+    p.y += cos(ph * 0.5) * prm * 0.15;
   }
   // global: hit punch, windup squash, idle breathing
   float flash = iFx.x;

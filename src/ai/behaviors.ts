@@ -2,7 +2,7 @@ import { Ev } from '../core/events';
 import { dcos, dsin, datan2 } from '../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
-import { acquireToken, hurtPlayer, killEnemy, releaseToken, spawnBullet } from '../sim/systems/entities';
+import { acquireToken, hurtPlayer, killEnemy, releaseToken, spawnBullet, spawnEnemy } from '../sim/systems/entities';
 import { hasLOS } from '../sim/systems/physics';
 import type { World } from '../sim/world';
 import { angleToPlayer, dir, distToPlayer, faceToward, integrate, pathTo } from './steer';
@@ -104,6 +104,7 @@ export function updateEnemies(w: World): void {
     E.py[i] = E.y[i]!;
     E.faceP[i] = E.face[i]!;
     E.flash[i] = Math.max(0, E.flash[i]! - DT * 11);
+    if (E.buff[i]! > 0) E.buff[i] = E.buff[i]! - 1;
     if (E.st[i] === AS.Spawning) {
       E.spawnT[i] = E.spawnT[i]! - DT;
       if (E.spawnT[i]! <= 0) {
@@ -145,19 +146,28 @@ export function updateEnemies(w: World): void {
       case ET.Dart:
         dart(w, i);
         break;
+      case ET.Worm:
+        worm(w, i);
+        break;
+      case ET.Parasite:
+        parasite(w, i);
+        break;
+      case ET.Brood:
+        brood(w, i);
+        break;
     }
     contact(w, i);
   }
 }
 
 function speedOf(w: World, i: number): number {
-  return enemyDef(w.enemies.type[i]!).speed * w.enemies.speedMul[i]! * w.phys.enemySpeed;
+  return enemyDef(w.enemies.type[i]!).speed * w.enemies.speedMul[i]! * w.phys.enemySpeed * (w.enemies.buff[i]! > 0 ? 1.3 : 1);
 }
 
 function contact(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
-  if (!p.alive) return;
+  if (!p.alive || E.st[i] === AS.Underground || E.st[i] === AS.Burrow || E.st[i] === AS.Attached) return;
   const dx = p.x - E.x[i]!;
   const dy = p.y - E.y[i]!;
   const rr = E.r[i]! + p.r * 0.8;
@@ -681,4 +691,214 @@ function dart(w: World, i: number): void {
       }
     }
   }
+}
+
+// ───────────────────────────── Worm: burrows, swims under the floor toward where you WILL be, erupts
+export const WORM = { burrow: 0.45, maxUnder: 3.6, speedUnder: 13, warn: 0.6, emerge: 0.25, exposed: 1.15, radius: 1.9 } as const;
+function worm(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  switch (E.st[i]) {
+    case AS.Burrow:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= WORM.burrow) {
+        wormRetarget(w, i);
+        setState(w, i, AS.Underground);
+      }
+      return;
+    case AS.Underground: {
+      if (E.think[i]! <= 0) {
+        E.think[i] = 0.25;
+        wormRetarget(w, i);
+      }
+      const dx = E.tx[i]! - E.x[i]!;
+      const dy = E.ty[i]! - E.y[i]!;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const sp = WORM.speedUnder * w.phys.enemySpeed;
+      if (d > 0.01) {
+        const step = Math.min(d, sp * DT);
+        E.vx[i] = (dx / d) * sp;
+        E.vy[i] = (dy / d) * sp;
+        // under the floor: pillars don't block, only the arena walls do
+        E.x[i] = Math.max(-ARENA_HW + 1, Math.min(ARENA_HW - 1, E.x[i]! + (dx / d) * step));
+        E.y[i] = Math.max(-ARENA_HH + 1, Math.min(ARENA_HH - 1, E.y[i]! + (dy / d) * step));
+        E.face[i] = datan2(dy, dx);
+        E.walk[i] = E.walk[i]! + step * 2;
+      }
+      if (d < 1.2 || E.stT[i]! > WORM.maxUnder) {
+        E.vx[i] = 0;
+        E.vy[i] = 0;
+        setState(w, i, AS.Windup);
+      }
+      return;
+    }
+    case AS.Windup:
+      // telegraph: the floor bulges where it will erupt
+      E.charge[i] = Math.min(1, E.stT[i]! / WORM.warn);
+      if (E.stT[i]! >= WORM.warn) {
+        E.charge[i] = 0;
+        setState(w, i, AS.Emerge);
+        E.face[i] = angleToPlayer(w, i);
+        w.events.push(Ev.WormEmerge, E.x[i]!, E.y[i]!, WORM.radius);
+        const dx = p.x - E.x[i]!;
+        const dy = p.y - E.y[i]!;
+        if (p.alive && dx * dx + dy * dy < WORM.radius * WORM.radius) hurtPlayer(w, 16, E.x[i]!, E.y[i]!);
+      }
+      return;
+    case AS.Emerge:
+      faceToward(w, i, angleToPlayer(w, i), 6);
+      if (E.stT[i]! >= WORM.emerge) {
+        E.cd[i] = WORM.exposed * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    case AS.Recover: {
+      // exposed and vulnerable — crawl, snap at the player
+      const sp = speedOf(w, i);
+      const dv = pathTo(w, i, p.x, p.y, true);
+      faceToward(w, i, datan2(dv[1]!, dv[0]!), 5);
+      integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+      if (E.stT[i]! >= E.cd[i]!) {
+        setState(w, i, AS.Burrow);
+        w.events.push(Ev.WormBurrow, E.x[i]!, E.y[i]!);
+      }
+      return;
+    }
+    default: {
+      // freshly spawned: crawl a moment, then dive
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! > 0.6) {
+        setState(w, i, AS.Burrow);
+        w.events.push(Ev.WormBurrow, E.x[i]!, E.y[i]!);
+      }
+    }
+  }
+}
+
+/** aim at the player's predicted position at arrival time (with difficulty-scaled error) */
+function wormRetarget(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const dx = p.x - E.x[i]!;
+  const dy = p.y - E.y[i]!;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  const eta = d / WORM.speedUnder + WORM.warn * 0.6;
+  const err = aimErr(w);
+  E.tx[i] = Math.max(-ARENA_HW + 1.5, Math.min(ARENA_HW - 1.5, p.x + p.vx * eta * 0.8 + w.rng.sym() * err * 1.2));
+  E.ty[i] = Math.max(-ARENA_HH + 1.5, Math.min(ARENA_HH - 1.5, p.y + p.vy * eta * 0.8 + w.rng.sym() * err * 1.2));
+}
+
+// ───────────────────────────── Parasite: latches onto another creature and feeds it (harder, faster)
+function hostValid(w: World, h: number, gen: number): boolean {
+  const E = w.enemies;
+  return h >= 0 && !!E.alive[h] && E.gen[h] === gen && E.st[h] !== AS.Underground && E.st[h] !== AS.Spawning;
+}
+function parasite(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  if (E.st[i] === AS.Attached) {
+    const h = E.tx[i]! | 0;
+    if (!hostValid(w, h, E.ty[i]! | 0)) {
+      setState(w, i, AS.Move);
+      E.kx[i] = w.rng.sym() * 6;
+      E.ky[i] = w.rng.sym() * 6;
+      return;
+    }
+    E.buff[h] = 3;
+    const f = E.face[h]!;
+    E.x[i] = E.x[h]! - dcos(f) * E.r[h]! * 0.35;
+    E.y[i] = E.y[h]! - dsin(f) * E.r[h]! * 0.35;
+    E.face[i] = f;
+    E.vx[i] = E.vx[h]!;
+    E.vy[i] = E.vy[h]!;
+    return;
+  }
+  if (E.st[i] === AS.Windup || E.st[i] === AS.Leap || E.st[i] === AS.Recover) {
+    swarmer(w, i); // no host: behaves like a leaping tick
+    return;
+  }
+  // seek the nearest unclaimed host
+  if (E.think[i]! <= 0) {
+    E.think[i] = 0.3;
+    let best = -1;
+    let bd = 18 * 18;
+    for (let k = 0; k < E.activeCount; k++) {
+      const j = E.active[k]!;
+      const t = E.type[j];
+      if (j === i || !E.alive[j] || t === ET.Parasite || t === ET.Boss || t === ET.Brood || E.buff[j]! > 0) continue;
+      if (E.st[j] === AS.Spawning || E.st[j] === AS.Underground) continue;
+      const dx = E.x[j]! - E.x[i]!;
+      const dy = E.y[j]! - E.y[i]!;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bd) {
+        bd = d2;
+        best = j;
+      }
+    }
+    E.aux[i] = best;
+  }
+  const h = E.aux[i]! | 0;
+  if (h >= 0 && E.alive[h] && E.buff[h] === 0) {
+    const dx = E.x[h]! - E.x[i]!;
+    const dy = E.y[h]! - E.y[i]!;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < E.r[h]! + 0.5) {
+      E.tx[i] = h;
+      E.ty[i] = E.gen[h]!;
+      E.buff[h] = 3;
+      setState(w, i, AS.Attached);
+      return;
+    }
+    const sp = speedOf(w, i);
+    const dv = pathTo(w, i, E.x[h]!, E.y[h]!, false);
+    faceToward(w, i, datan2(dv[1]!, dv[0]!), 12);
+    integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+    return;
+  }
+  // nobody to ride: hunt the player like a tick
+  const d = distToPlayer(w, i);
+  const dv = pathTo(w, i, p.x, p.y, true);
+  const sp = speedOf(w, i);
+  faceToward(w, i, datan2(dv[1]!, dv[0]!), 10);
+  integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+  if (d < 3.5 && E.cd[i]! <= 0) setState(w, i, AS.Windup);
+}
+
+// ───────────────────────────── Brood (Матка): immobile mother; spits acid, births the next generation
+function brood(w: World, i: number): void {
+  const E = w.enemies;
+  const hpf = E.hp[i]! / E.maxHp[i]!;
+  const rage = hpf < 0.5;
+  faceToward(w, i, angleToPlayer(w, i), 0.8);
+  integrate(w, i, 0, 0);
+  E.aux[i] = E.aux[i]! + DT; // birth clock
+  const birthEvery = (rage ? 5 : 7.5) * cdMul(w);
+  // contraction before a birth: charge rises during the last 1.2 s
+  E.charge[i] = Math.max(0, Math.min(1, (E.aux[i]! - (birthEvery - 1.2)) / 1.2));
+  if (E.aux[i]! >= birthEvery) {
+    E.aux[i] = 0;
+    const n = rage ? 4 : 3;
+    for (let k = 0; k < n; k++) {
+      const a = w.rng.range(0, 6.283);
+      spawnEnemy(w, ET.Swarmer, clampX(E.x[i]! + dcos(a) * 3.6), clampY(E.y[i]! + dsin(a) * 3.6));
+    }
+    if (hpf < 0.75) spawnEnemy(w, ET.Worm, clampX(E.x[i]! + 4), clampY(E.y[i]! + 2));
+    if (rage) spawnEnemy(w, ET.Parasite, clampX(E.x[i]! - 3), clampY(E.y[i]! + 3));
+    w.events.push(Ev.Birth, E.x[i]!, E.y[i]!, n);
+  }
+  // acid volley
+  if (E.st[i] === AS.Windup) {
+    if (E.stT[i]! >= 0.55) {
+      const base = angleToPlayer(w, i);
+      const m = rage ? 9 : 7;
+      for (let k = 0; k < m; k++) {
+        const a = base + (k / (m - 1) - 0.5) * 1.1;
+        const b = spawnBullet(w, Team.Enemy, BK.Shard, E.x[i]! + dcos(a) * 2.4, E.y[i]! + dsin(a) * 2.4, a, 11 * w.diff.bulletSpeedMul, 12, 0.3, 3, 0, 0, 0, 0, 0, 0);
+        if (b >= 0) w.bullets.h0[b] = 1.8;
+      }
+      w.events.push(Ev.EnemyShoot, E.x[i]!, E.y[i]!, base, ET.Brood, BK.Shard);
+      E.cd[i] = (rage ? 1.8 : 2.6) * cdMul(w);
+      setState(w, i, AS.Move);
+    }
+  } else if (E.cd[i]! <= 0) setState(w, i, AS.Windup);
 }

@@ -179,6 +179,22 @@ html, body {
 .dbg-panel { position: fixed; left: 10px; bottom: 10px; font: 400 11px/1.45 var(--mono); color: #b8ffcf; background: rgb(0 0 0 / 0.6); padding: 8px 10px; white-space: pre; pointer-events: none; }
 
 /* ── PWA toasts: small, corner-anchored, never block the arena */
+.wave small.iter { opacity: 0.55; font-size: 10px; margin-top: 2px; }
+.lore-log {
+  position: absolute;
+  left: 32px;
+  bottom: 110px;
+  max-width: min(560px, 80vw);
+  font: 400 14px/1.7 var(--mono);
+  color: #ff8a9a;
+  text-shadow: 0 0 10px rgb(255 45 74 / 0.6);
+  white-space: pre;
+  padding: 12px 16px;
+  background: rgb(12 3 8 / 0.55);
+  border-left: 2px solid #ff2d4a;
+  transition: opacity 1s;
+}
+.lore-log.out { opacity: 0; }
 .pwa-toast {
   position: fixed;
   bottom: 18px;

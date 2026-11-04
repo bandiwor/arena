@@ -3,7 +3,9 @@ import { MUTATORS } from '../sim/content/mutators';
 import type { World } from '../sim/world';
 import type { AudioEngine } from '../audio/audio';
 import { CameraRig } from './camera';
-import { EntityRenderer } from './entities';
+import { EntityRenderer, SYNTH_SPEED } from './entities';
+import { TRANS_SYNTH } from '../sim/systems/waves';
+import { WavePhase } from '../sim/world';
 import { Floor } from './floor';
 import { FxDirector } from './fx';
 import { Juice } from './juice';
@@ -57,7 +59,7 @@ export class GameRenderer {
       alpha: false,
       stencil: false,
       depth: true,
-      preserveDrawingBuffer: false,
+      preserveDrawingBuffer: import.meta.env.DEV,
     });
     this.renderer.setClearColor(new Color(PAL.void), 1);
     this.renderer.info.autoReset = false;
@@ -106,9 +108,10 @@ export class GameRenderer {
     this.floor.decals.render(this.renderer, fxDt);
 
     // mutator tint + ice
-    let tr = 1;
-    let tg = 1;
-    let tb = 1;
+    // sector base tint: Плоть bleeds the neon toward crimson
+    let tr = w.act === 1 ? 1.5 : 1;
+    let tg = w.act === 1 ? 0.45 : 1;
+    let tb = w.act === 1 ? 0.6 : 1;
     for (let m = 0; m < MUTATORS.length; m++) {
       if (!(w.mutators & (1 << m))) continue;
       lin(MUTATORS[m]!.color, tint);
@@ -127,6 +130,15 @@ export class GameRenderer {
     (this.floor.wallMat.uniforms['uTint']!.value as { set(a: number, b: number, c: number): void }).set(this.tintR, this.tintG, this.tintB);
     FU['uIce']!.value = this.ice;
     FU['uCorrupt']!.value = corruption;
+    // act transition timeline drives the decompile scan and synthesis front
+    FU['uActMix']!.value = w.act === 1 ? 1 : 0;
+    const inTrans = w.wave.phase === WavePhase.Transition;
+    const tt = w.wave.t + alpha / 60;
+    FU['uScanR']!.value = inTrans && tt < TRANS_SYNTH ? tt * 24 : -1;
+    FU['uSynthR']!.value = inTrans && tt >= TRANS_SYNTH ? (tt - TRANS_SYNTH) * SYNTH_SPEED : -1;
+    const PU = FU['uPools']!.value as { set(a: number, b: number, c: number): void }[];
+    for (let k = 0; k < w.pools.count; k++) PU[k]!.set(w.pools.x[k]!, w.pools.y[k]!, w.pools.r[k]!);
+    FU['uPoolCount']!.value = w.pools.count;
 
     // post uniforms
     const J = this.juice;

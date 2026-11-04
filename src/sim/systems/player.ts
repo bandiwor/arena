@@ -1,6 +1,6 @@
 import { Ev } from '../../core/events';
 import { angDiff, dcos, dsin, datan2, segDist2 } from '../../core/detmath';
-import { ARENA_HH, ARENA_HW, Btn, DT, Team, WP } from '../constants';
+import { AS, ARENA_HH, ARENA_HW, Btn, DT, Team, WP } from '../constants';
 import { weaponDef } from '../content/weapons';
 import { cmdSlot, type InputCmd } from '../input';
 import type { World } from '../world';
@@ -84,7 +84,17 @@ export function updatePlayer(w: World, cmd: InputCmd): void {
     p.vy = p.dashY * DASH_SPEED;
     if (p.stats.dashShock > 0) dashShock(w);
   } else {
-    const speed = BASE_SPEED * p.stats.speedMul * w.phys.playerSpeed;
+    let speed = BASE_SPEED * p.stats.speedMul * w.phys.playerSpeed;
+    // flesh pools drag at the player's feet
+    const PL = w.pools;
+    for (let k = 0; k < PL.count; k++) {
+      const dx = p.x - PL.x[k]!;
+      const dy = p.y - PL.y[k]!;
+      if (dx * dx + dy * dy < PL.r[k]! * PL.r[k]!) {
+        speed *= 0.62;
+        break;
+      }
+    }
     const tvx = mx * speed;
     const tvy = my * speed;
     // accelerate toward target; friction governs how fast we lose speed (ice!)
@@ -235,7 +245,7 @@ function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity
   let n = 0;
   for (let k = 0; k < E.activeCount; k++) {
     const i = E.active[k]!;
-    if (!E.alive[i]) continue;
+    if (!E.alive[i] || E.st[i] === AS.Underground || E.st[i] === AS.Spawning) continue;
     const rr = E.r[i]! + 0.35;
     if (segDist2(E.x[i]!, E.y[i]!, x, y, ex, ey) < rr * rr && n < railHits.length) {
       railHits[n] = i;

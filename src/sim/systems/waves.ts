@@ -1,11 +1,12 @@
 import { Ev } from '../../core/events';
-import { DT, ET } from '../constants';
+import { DT, ET, Team } from '../constants';
 import { dexp } from '../../core/detmath';
 import { MUTATORS, mutatorByKey } from '../content/mutators';
 import { UPGRADES, ownsWeapon, stacksOf } from '../content/upgrades';
 import { WAVES } from '../content/waves';
 import { cmdPick, type InputCmd } from '../input';
-import { defaultPhys, WavePhase, type Phys, type World } from '../world';
+import { buildArenaLayout, defaultPhys, WavePhase, type Phys, type World } from '../world';
+import { collidePillars, pushOut } from './physics';
 import { placeSpawn, spawnEnemy } from './entities';
 
 const spawnPos = new Float32Array(2);
@@ -87,12 +88,52 @@ export function updateWaves(w: World, cmd: InputCmd): void {
         const up = UPGRADES[W.offer[pick - 1]!]!;
         applyUpgrade(w, up.id);
         W.index++;
+        const prevAct = WAVES[W.index - 1]!.act ?? 0;
+        const nextAct = WAVES[W.index]!.act ?? 0;
+        W.t = 0;
+        if (nextAct !== prevAct) {
+          W.phase = WavePhase.Transition;
+          beginTransition(w, nextAct);
+        } else W.phase = WavePhase.Intro;
+      }
+      return;
+    }
+    case WavePhase.Transition: {
+      if (W.t >= TRANS_SYNTH && W.t - DT < TRANS_SYNTH) synthesise(w, WAVES[W.index]!.act ?? 0);
+      if (W.t >= TRANS_DUR) {
         W.phase = WavePhase.Intro;
         W.t = 0;
       }
       return;
     }
   }
+}
+
+/** Between acts: the archive decompiles the old sector and synthesises the next one. */
+export const TRANS_DUR = 8;
+export const TRANS_SYNTH = 4.6;
+
+function beginTransition(w: World, act: number): void {
+  // nothing hostile survives the decompile
+  const B = w.bullets;
+  for (let i = 0; i < B.hi; i++) if (B.alive[i] && B.team[i] === Team.Enemy) B.life[i] = 0.001;
+  for (let k = 0; k < w.lasers.alive.length; k++) w.lasers.alive[k] = 0;
+  w.events.push(Ev.ActTransition, act);
+}
+
+function synthesise(w: World, act: number): void {
+  w.act = act;
+  buildArenaLayout(w);
+  w.flow.targetCell = -1;
+  // the archive restores the debugger process before the next test
+  const p = w.player;
+  p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.4);
+  // push the player out of any freshly grown pillar
+  if (collidePillars(w, p.x, p.y, p.r + 0.1)) {
+    p.x = pushOut[0]!;
+    p.y = pushOut[1]!;
+  }
+  w.events.push(Ev.ActSynth, 0, 0, act);
 }
 
 function groupCount(w: World, type: number, count: number): number {

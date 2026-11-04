@@ -19,6 +19,8 @@ export interface WaveDef {
   /** mutator key or undefined */
   readonly mutator?: string;
   readonly boss?: boolean;
+  /** 0 = Акт I «Карантин», 1 = Акт II «Плоть» */
+  readonly act?: number;
 }
 
 export const WAVES: readonly WaveDef[] = [
@@ -113,6 +115,65 @@ export const WAVES: readonly WaveDef[] = [
     groups: [{ type: ET.Boss, count: 1, at: 1.5, every: 0, place: 'ring' }],
     boss: true,
   },
+  // ─────────────── Акт II · ПЛОТЬ
+  {
+    name: 'Под кожей',
+    act: 1,
+    groups: [
+      { type: ET.Swarmer, count: 10, at: 0.5, every: 0.25, place: 'edge' },
+      { type: ET.Worm, count: 2, at: 2, every: 1.5, place: 'far' },
+      { type: ET.Bloater, count: 3, at: 7, every: 0.8, place: 'corners' },
+      { type: ET.Worm, count: 2, at: 11, every: 1, place: 'ring' },
+      { type: ET.Swarmer, count: 8, at: 13, every: 0.2, place: 'far' },
+    ],
+  },
+  {
+    name: 'Паразиты',
+    act: 1,
+    groups: [
+      { type: ET.Charger, count: 2, at: 0.5, every: 2, place: 'far' },
+      { type: ET.Gunner, count: 3, at: 1.5, every: 0.8, place: 'ring' },
+      { type: ET.Parasite, count: 4, at: 4, every: 0.5, place: 'edge' },
+      { type: ET.Swarmer, count: 12, at: 7, every: 0.2, place: 'edge' },
+      { type: ET.Worm, count: 2, at: 10, every: 1, place: 'far' },
+      { type: ET.Parasite, count: 3, at: 13, every: 0.4, place: 'corners' },
+    ],
+  },
+  {
+    name: 'Глубина',
+    act: 1,
+    groups: [
+      { type: ET.Worm, count: 5, at: 0.5, every: 1.2, place: 'ring' },
+      { type: ET.Archer, count: 3, at: 2, every: 0.6, place: 'far' },
+      { type: ET.Shielder, count: 2, at: 4, every: 1, place: 'ring' },
+      { type: ET.Parasite, count: 5, at: 6, every: 0.4, place: 'edge' },
+      { type: ET.Bloater, count: 4, at: 10, every: 0.6, place: 'corners' },
+      { type: ET.Dart, count: 4, at: 12, every: 0.5, place: 'ring' },
+    ],
+  },
+  {
+    name: 'МАТКА',
+    act: 1,
+    groups: [
+      { type: ET.Brood, count: 1, at: 1.5, every: 0, place: 'far' },
+      { type: ET.Swarmer, count: 6, at: 4, every: 0.3, place: 'edge' },
+    ],
+    boss: true,
+  },
 ];
+
+export const ACT_NAMES = ['КАРАНТИН', 'ПЛОТЬ'] as const;
+/** index of wave i within its act, and act length */
+export function actWave(i: number): { act: number; n: number; total: number } {
+  const act = WAVES[i]?.act ?? 0;
+  let n = 0;
+  let total = 0;
+  for (let k = 0; k < WAVES.length; k++) {
+    if ((WAVES[k]!.act ?? 0) !== act) continue;
+    total++;
+    if (k <= i) n++;
+  }
+  return { act, n, total };
+}
 
 export const WAVE_COUNT = WAVES.length;

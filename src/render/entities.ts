@@ -8,6 +8,11 @@ import {
   type Scene,
 } from 'three';
 import { AS, ENEMY_TYPE_COUNT, ET, MAX_ENEMIES } from '../sim/constants';
+import { TRANS_SYNTH } from '../sim/systems/waves';
+import { WavePhase } from '../sim/world';
+
+/** speed of the synthesis wave front across the floor (units / s) */
+export const SYNTH_SPEED = 15;
 import { enemyDef } from '../sim/content/enemies';
 import type { World } from '../sim/world';
 import type { LightPool } from './lights';
@@ -167,6 +172,8 @@ export class EntityRenderer {
   readonly enemies: InstancedModel[] = [];
   readonly player: InstancedModel;
   readonly pillars: InstancedModel;
+  /** Act II flesh growths */
+  readonly growths: InstancedModel;
   private readonly shadowMesh: InstancedMesh;
   private readonly shadowAttr: InstancedBufferAttribute;
   private shadowCount = 0;
@@ -186,7 +193,7 @@ export class EntityRenderer {
 
   constructor(scene: Scene, lights: LightPool) {
     for (let t = 0; t < ENEMY_TYPE_COUNT; t++) {
-      const m = new InstancedModel(ENEMY_MODELS[t]!, lights, t === ET.Boss ? 4 : MAX_ENEMIES + GHOSTS);
+      const m = new InstancedModel(ENEMY_MODELS[t]!, lights, t === ET.Boss || t === ET.Brood ? 4 : MAX_ENEMIES + GHOSTS);
       this.enemies.push(m);
       scene.add(m.mesh);
     }
@@ -194,6 +201,8 @@ export class EntityRenderer {
     scene.add(this.player.mesh);
     this.pillars = new InstancedModel(modelByKey('pillar'), lights, 16);
     scene.add(this.pillars.mesh);
+    this.growths = new InstancedModel(modelByKey('growth'), lights, 16);
+    scene.add(this.growths.mesh);
     const sg = new PlaneGeometry(1, 1);
     this.shadowAttr = new InstancedBufferAttribute(new Float32Array((MAX_ENEMIES + 8) * 4), 4);
     this.shadowAttr.setUsage(DynamicDrawUsage);
@@ -258,6 +267,18 @@ export class EntityRenderer {
       const spawn = st === AS.Spawning ? Math.max(0, 1 - E.spawnT[k]! / def.spawnTime) : 1;
       let h = 0;
       if (st === AS.Leap) h = Math.sin(Math.min(1, E.stT[k]! / 0.22) * Math.PI) * 0.9;
+      if (t === ET.Worm) {
+        // under the floor: no model (the FX director draws the moving bulge)
+        if (st === AS.Underground || st === AS.Windup) continue;
+        if (st === AS.Burrow) h = -Math.min(1, E.stT[k]! / 0.45) * 1.3;
+        else if (st === AS.Emerge) {
+          const e = Math.min(1, E.stT[k]! / 0.25);
+          h = -1.3 + e * 1.3 + Math.sin(e * Math.PI) * 0.9; // bursts up past the surface, settles
+        }
+      } else if (t === ET.Parasite && st === AS.Attached) {
+        const host = E.tx[k]! | 0;
+        h = enemyDef(E.type[host] ?? 0).height * 0.72;
+      }
       const sp = Math.sqrt(E.vx[k]! * E.vx[k]! + E.vy[k]! * E.vy[k]!);
       // per-individual size variety (swarms read as a population, not clones)
       const vari = t === ET.Boss ? 1 : t === ET.Swarmer ? 0.82 + E.seed[k]! * 0.4 : 0.93 + E.seed[k]! * 0.14;
@@ -268,7 +289,7 @@ export class EntityRenderer {
       const km = Math.sqrt(kx * kx + ky * ky);
       const kk = Math.min(0.55, km * 0.07) / (km || 1);
       const lean = t === ET.Boss ? 0 : 0.035;
-      m.push(x, h, y, face, scale, E.flash[k]!, spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / def.speed), st, E.affix[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
+      m.push(x, h, y, face, scale, E.flash[k]! * (def.r >= 1.5 ? 0.3 : 1), spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / Math.max(0.1, def.speed)), st, E.affix[k] || E.buff[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
       if (spawn > 0.2) this.shadow(x + 0.25, y + 0.2, def.r * 1.4 * scale, 0.6 * spawn);
     }
     // ghosts (death dissolve)
@@ -312,9 +333,30 @@ export class EntityRenderer {
     pl.end(time);
     // pillars (static, but re-pushed for uTime/simplicity)
     const P = w.pillars;
-    const pm = this.pillars;
+    const pm = w.act === 0 ? this.pillars : this.growths;
+    const other = w.act === 0 ? this.growths : this.pillars;
+    other.begin();
+    other.end(time);
     pm.begin();
-    for (let k = 0; k < P.count; k++) pm.push(P.x[k]!, 0, P.y[k]!, k * 0.5, P.r[k]!, 0, 1, 0, k * 0.13, 0, 0, 0, 0);
+    // act transition: before the synthesis the old pillars decompile (dissolve upward into pixels);
+    // after it, new growths sprout as the synthesis wave front passes over them
+    let tr = -1;
+    if (w.wave.phase === WavePhase.Transition) tr = w.wave.t + alpha * (1 / 60);
+    for (let k = 0; k < P.count; k++) {
+      let spawn = 1;
+      let flash = 0;
+      if (tr >= 0 && tr < TRANS_SYNTH) {
+        const d = Math.max(0, Math.min(1, (tr - 0.5 - k * 0.12) / 1.3));
+        if (d > 0) spawn = -Math.max(0.001, d);
+        flash = d > 0 && d < 0.15 ? 1 : 0;
+      } else if (tr >= TRANS_SYNTH) {
+        const front = (tr - TRANS_SYNTH) * SYNTH_SPEED;
+        const dist = Math.sqrt(P.x[k]! * P.x[k]! + P.y[k]! * P.y[k]!);
+        spawn = Math.max(0, Math.min(0.999, (front - dist) / 6));
+        if (spawn <= 0) continue;
+      }
+      pm.push(P.x[k]!, 0, P.y[k]!, k * 0.5, P.r[k]!, flash, spawn, 0, k * 0.13, 0, 0, 0, 0);
+    }
     pm.end(time);
     this.shadowMesh.count = this.shadowCount;
     this.shadowAttr.clearUpdateRanges();
@@ -324,4 +366,4 @@ export class EntityRenderer {
 }
 
 /** Models are authored at the sim radius of each type; scale = 1 at default radius. */
-const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6, 0.75, 0.42];
+const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6, 0.75, 0.42, 0.6, 0.36, 2.3];

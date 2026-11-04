@@ -219,10 +219,28 @@ uniform float uIce;
 uniform float uCorrupt;
 uniform vec3 uPlayer;
 uniform vec4 uWells[4];
+uniform float uActMix;   // 1 when the current sector is Плоть
+uniform float uSynthR;   // synthesis wave front radius (<0: none / complete)
+uniform float uScanR;    // decompile scan ring radius (<0: none)
+uniform vec3 uPools[8];  // x, y, r
+uniform int uPoolCount;
 varying vec3 vW;
 ${NOISE}
 ${LIGHTS}
 float hexDist(vec2 p){ p = abs(p); return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x); }
+// cellular noise → organic cells; x = F1, y = F2, z = cell id hash
+vec3 cells(vec2 p){
+  vec2 i = floor(p); vec2 f = fract(p);
+  float f1 = 8.0, f2 = 8.0, id = 0.0;
+  for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
+    vec2 g = vec2(float(x), float(y));
+    vec2 o = hash22(i + g);
+    o = 0.5 + 0.38 * sin(uTime * 0.35 + 6.2831 * o);
+    float d = length(g + o - f);
+    if(d < f1){ f2 = f1; f1 = d; id = hash12(i + g); } else if(d < f2) f2 = d;
+  }
+  return vec3(f1, f2, id);
+}
 vec4 hexCoords(vec2 uv){
   vec2 r = vec2(1.0, 1.7320508); vec2 h = r * 0.5;
   vec2 a = mod(uv, r) - h; vec2 b = mod(uv - h, r) - h;
@@ -274,6 +292,49 @@ void main(){
   // occasional pulsing tiles
   float pulse = step(0.985, id) * (0.5 + 0.5 * sin(uTime * 2.0 + id * 50.0));
   col += (1.0 - line) * pulse * vec3(0.02, 0.01, 0.05) * uTint;
+  // ── decompile scan: a bright ring sweeps out, the grid behind it is "erased" (data removed)
+  float rr = length(p);
+  if(uScanR >= 0.0){
+    float band = exp(-pow((rr - uScanR) * 1.4, 2.0));
+    float erased = clamp((uScanR - rr) / 8.0, 0.0, 1.0);
+    col *= 1.0 - erased * 0.75 * (1.0 - uActMix);
+    col += band * (vec3(0.1, 0.9, 1.4) * (0.6 + line * 1.5)) + band * line * vec3(0.8, 0.3, 1.2);
+  }
+  // ── Плоть: living tissue with pulsing veins, synthesised outward from the centre
+  float fl = uActMix;
+  if(uSynthR >= 0.0) fl *= clamp((uSynthR - rr) / 4.0, 0.0, 1.0);
+  if(fl > 0.0){
+    vec2 wp = p * 0.42 + vec2(fbm(p * 0.12 + 3.1), fbm(p * 0.12 - 7.7)) * 1.6;
+    vec3 c = cells(wp);
+    float edge = c.y - c.x;
+    float vein = 1.0 - smoothstep(0.0, 0.09, edge);
+    float hb = pow(max(0.0, sin(uTime * 2.2)), 12.0) + 0.6 * pow(max(0.0, sin(uTime * 2.2 - 0.55)), 12.0);
+    float travel = 0.5 + 0.5 * sin(rr * 0.6 - uTime * 3.0 + c.z * 6.0);
+    vec3 cell = vec3(0.02, 0.0035, 0.007) * (0.7 + c.z * 0.6) * (0.8 + fbm(p * 0.5) * 0.5);
+    cell *= 0.75 + 0.5 * smoothstep(0.0, 0.5, c.x); // cell centres bulge (lighter), edges sink
+    vec3 veinCol = vec3(0.22, 0.012, 0.035) * (0.35 + hb * 1.1 + travel * 0.25);
+    vec3 fleshCol = cell + cell * litF * 4.0 + vein * veinCol + vein * litF * 0.05;
+    // wet specular sheen on bulging cells
+    fleshCol += litF * 0.03 * smoothstep(0.15, 0.45, c.x);
+    // pools: dark glossy liquid with slow ripples and a glowing membrane rim
+    for(int k=0;k<8;k++){
+      if(k >= uPoolCount) break;
+      vec3 pl = uPools[k];
+      float d = length(p - pl.xy) / pl.z + (fbm(p * 0.8 + float(k)) - 0.5) * 0.18;
+      if(d < 1.08){
+        float inside = 1.0 - smoothstep(0.92, 1.0, d);
+        vec3 liquid = vec3(0.025, 0.0, 0.006) + litF * vec3(0.05, 0.03, 0.04) + vec3(0.06, 0.0, 0.012) * (0.5 + 0.5 * sin(d * 18.0 - uTime * 1.6)) * 0.4;
+        fleshCol = mix(fleshCol, liquid, inside);
+        fleshCol += vec3(0.35, 0.02, 0.08) * exp(-pow((d - 1.0) * 14.0, 2.0)) * (0.6 + hb);
+      }
+    }
+    col = mix(col, fleshCol, fl);
+  }
+  // synthesis front: hot crimson-white seam where matter is being written
+  if(uSynthR >= 0.0){
+    float sb = exp(-pow((rr - uSynthR) * 0.9, 2.0));
+    col += sb * (vec3(1.6, 0.18, 0.35) + vec3(1.0) * pow(sb, 6.0)) * (0.7 + 0.3 * sin(atan(p.y, p.x) * 12.0 + uTime * 9.0));
+  }
   // decals (blood / sap / oil / scorch)
   vec2 duv = vec2((p.x + ${ARENA_HW.toFixed(1)}) / ${ARENA_W.toFixed(1)}, 1.0 - (p.y + ${ARENA_HH.toFixed(1)}) / ${ARENA_H.toFixed(1)});
   vec4 dc = texture2D(tDecal, duv);
@@ -345,6 +406,11 @@ export class Floor {
         uCorrupt: { value: 0 },
         uPlayer: { value: new Vector3() },
         uWells: { value: Array.from({ length: 4 }, () => new Vector4()) },
+        uActMix: { value: 0 },
+        uSynthR: { value: -1 },
+        uScanR: { value: -1 },
+        uPools: { value: Array.from({ length: 8 }, () => new Vector3()) },
+        uPoolCount: { value: 0 },
         ...lights.uniforms,
       },
     });

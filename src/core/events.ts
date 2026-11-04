@@ -31,6 +31,11 @@ export const Ev = {
   Pickup: 29, // x y kind
   Telegraph: 30, // x y radius duration (ground circle)
   WeaponGained: 31, // weaponId rarity
+  ActTransition: 32, // act (new act index)
+  ActSynth: 33, // x y act — the moment the new sector materialises
+  WormBurrow: 34, // x y
+  WormEmerge: 35, // x y radius
+  Birth: 36, // x y count
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

@@ -34,6 +34,7 @@ export const QK = {
   Lightning: 16,
   Streak: 17,
   Hitmarker: 18,
+  Mound: 19,
 } as const;
 
 /** Orientation modes */
@@ -212,6 +213,15 @@ void main(){
   } else if (k < 17.5) { // streak (dash afterimage / wind)
     float d = abs(uv.y);
     a = smoothstep(1.0, 0.0, d) * smoothstep(1.0, -0.6, uv.x) * smoothstep(-1.0, -0.7, uv.x) * (1.0 - prog);
+  } else if (k > 18.5) { // mound: soil heaving over something moving underneath — dark dome, glowing cracks
+    float d = length(uv);
+    float ang = atan(uv.y, uv.x);
+    float cracks = smoothstep(0.08, 0.0, abs(fract(ang * 1.2732 + vnoise(uv * 3.0 + seed) * 0.8) - 0.5) - 0.42) * smoothstep(1.0, 0.2, d) * step(0.15, d);
+    float dome = 1.0 - smoothstep(0.55, 1.0, d);
+    float pulse = 0.6 + 0.4 * sin(uTime * 14.0 + seed * 9.0);
+    a = cracks * (1.2 + prog * 2.0) * pulse;
+    occl = dome * 0.85;
+    darkCol = vec3(0.03, 0.006, 0.008) * (0.6 + (1.0 - d) * 0.8);
   } else { // hitmarker: four diagonal ticks that punch outward
     vec2 au = abs(uv);
     float diag = abs(au.x - au.y);

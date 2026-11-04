@@ -8,7 +8,8 @@ import { Inputs, Scenario } from '../sim/scenario';
 import { hashWorld, Sim } from '../sim/sim';
 import { killEnemy, spawnEnemy, type SpawnOpts } from '../sim/systems/entities';
 import { applyUpgrade, setMutator } from '../sim/systems/waves';
-import { WavePhase, type World } from '../sim/world';
+import { buildArenaLayout, WavePhase, type World } from '../sim/world';
+import { Btn } from '../sim/constants';
 import type { Game } from '../game';
 import type { ReplayData } from '../sim/replay';
 import { DebugOverlay, type OverlayKind } from './overlay';
@@ -32,6 +33,11 @@ export const SCENES: Record<string, string> = {
   boss2: 'Босс, фаза 2',
   boss3: 'Босс, фаза 3',
   stress: '300 врагов, нагрузочный тест',
+  transition: 'Переход Акт I → Акт II (декомпиляция и синтез)',
+  act2: 'Акт II «Плоть»: смешанный бой',
+  worms: 'Черви: рытьё, упреждение, прорыв',
+  brood: 'Мини-босс МАТКА',
+  parasites: 'Паразиты и носители',
   'mutator:overclock': 'Мутатор РАЗГОН',
   'mutator:cryo': 'Мутатор КРИОПОЛ',
   'mutator:gravity': 'Мутатор ГРАВИКОЛОДЦЫ',
@@ -88,6 +94,28 @@ export function buildScene(name: string, seed: number, difficulty: number): Sim 
         const r = 8 + (k % 13) * 1.6;
         s.spawn(k % 5 === 0 ? 'gunner' : 'swarmer', Math.cos(a) * r, Math.sin(a) * r * 0.65);
       }
+      break;
+    }
+    case 'transition': {
+      s = sc('campaign', 9).player({ god: true, weapons: ['pulse', 'rail'] });
+      const w = s.world;
+      w.wave.phase = WavePhase.Upgrade;
+      w.wave.offerCount = 1;
+      w.wave.offer[0] = 0;
+      s.input((_w, _t, c) => (c.btn |= 1 << Btn.PickShift)).run(1).input(() => {});
+      break;
+    }
+    case 'act2':
+    case 'worms':
+    case 'brood':
+    case 'parasites': {
+      s = sc().player({ god: true, weapons: ['pulse', 'scatter', 'rail'] });
+      s.world.act = 1;
+      buildArenaLayout(s.world);
+      if (name === 'act2') s.spawn('worm', -12, -10).spawn('worm', 14, 8).spawn('parasite', 6, -12).spawn('charger', 8, -14).spawn('gunner', -16, 10).spawn('swarmer', -4, -16).spawn('swarmer', 0, -17).spawn('bloater', 16, -6);
+      if (name === 'worms') s.spawn('worm', -14, -10).spawn('worm', 14, -10).spawn('worm', 0, 16);
+      if (name === 'brood') s.spawn('brood', 0, -14);
+      if (name === 'parasites') s.spawn('charger', -6, -12).spawn('gunner', 6, -12).spawn('parasite', -14, 4).spawn('parasite', 14, 4).spawn('parasite', 0, 14);
       break;
     }
     default: {

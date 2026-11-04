@@ -20,7 +20,7 @@ export interface EnemyDef {
   readonly height: number;
 }
 
-export const ENEMIES: readonly EnemyDef[] = [
+export const ENEMIES: EnemyDef[] = [
   { type: ET.Swarmer, key: 'swarmer', name: 'Роевик', hp: 18, r: 0.45, speed: 6.8, accel: 40, mass: 0.6, material: Mat.Flesh, contactDmg: 8, score: 10, spawnTime: 0.7, drop: 0.04, height: 0.7 },
   { type: ET.Gunner, key: 'gunner', name: 'Дрон-стрелок', hp: 40, r: 0.6, speed: 5.2, accel: 22, mass: 1, material: Mat.Machine, contactDmg: 6, score: 25, spawnTime: 0.9, drop: 0.08, height: 1.4 },
   { type: ET.Charger, key: 'charger', name: 'Таран', hp: 130, r: 0.95, speed: 3.6, accel: 14, mass: 4, material: Mat.Flesh, contactDmg: 22, score: 50, spawnTime: 1.1, drop: 0.2, height: 1.5 },
@@ -30,6 +30,11 @@ export const ENEMIES: readonly EnemyDef[] = [
   { type: ET.Bloater, key: 'bloater', name: 'Гнойник', hp: 42, r: 0.75, speed: 2.7, accel: 12, mass: 2, material: Mat.Flesh, contactDmg: 10, score: 20, spawnTime: 0.9, drop: 0.12, height: 1.2 },
   { type: ET.Dart, key: 'dart', name: 'Жало', hp: 14, r: 0.42, speed: 8.5, accel: 34, mass: 0.5, material: Mat.Machine, contactDmg: 9, score: 15, spawnTime: 0.7, drop: 0.05, height: 1.1 },
 ];
+ENEMIES.push(
+  { type: ET.Worm, key: 'worm', name: 'Червь', hp: 34, r: 0.6, speed: 3, accel: 20, mass: 1.4, material: Mat.Flesh, contactDmg: 10, score: 30, spawnTime: 0.9, drop: 0.08, height: 1.0 },
+  { type: ET.Parasite, key: 'parasite', name: 'Паразит', hp: 16, r: 0.36, speed: 7.5, accel: 40, mass: 0.4, material: Mat.Flesh, contactDmg: 7, score: 20, spawnTime: 0.7, drop: 0.04, height: 0.55 },
+  { type: ET.Brood, key: 'brood', name: 'МАТКА', hp: 1900, r: 2.3, speed: 0, accel: 4, mass: 80, material: Mat.Flesh, contactDmg: 25, score: 800, spawnTime: 2.2, drop: 0, height: 3.4 },
+);
 ENEMIES.forEach((e, i) => {
   if (e.type !== i) throw new Error('enemy table order mismatch');
 });

@@ -11,10 +11,12 @@ import {
   MAX_LASERS,
   MAX_PICKUPS,
   MAX_PILLARS,
+  MAX_POOLS,
   MAX_WELLS,
   WEAPON_COUNT,
 } from './constants';
 import { difficulty, type DifficultyDef } from './content/difficulty';
+import { WAVES } from './content/waves';
 
 /** Fixed-capacity free list of slot indices; deterministic (LIFO). */
 export class FreeList {
@@ -78,6 +80,8 @@ export class EnemyStore {
   /** generic per-archetype scratch (dodge cooldown, strafe dir, ...) */
   readonly aux = new Float32Array(MAX_ENEMIES);
   readonly aux2 = new Float32Array(MAX_ENEMIES);
+  /** >0 while a parasite feeds this enemy (decays each tick) */
+  readonly buff = new Uint8Array(MAX_ENEMIES);
   /** last utility scores, 6 per enemy (debug + inspector) */
   readonly util = new Float32Array(MAX_ENEMIES * 6);
   /** packed list of alive ids, rebuilt by rebuildActive() */
@@ -162,6 +166,21 @@ export class WellStore {
   readonly vy = new Float32Array(MAX_WELLS);
   readonly strength = new Float32Array(MAX_WELLS);
   readonly radius = new Float32Array(MAX_WELLS);
+}
+
+/** Flesh pools (Act II): slow the player down, natives move freely. */
+export class Pools {
+  count = 0;
+  readonly x = new Float32Array(MAX_POOLS);
+  readonly y = new Float32Array(MAX_POOLS);
+  readonly r = new Float32Array(MAX_POOLS);
+  add(x: number, y: number, r: number): void {
+    if (this.count >= MAX_POOLS) return;
+    this.x[this.count] = x;
+    this.y[this.count] = y;
+    this.r[this.count] = r;
+    this.count++;
+  }
 }
 
 export class Pillars {
@@ -269,6 +288,8 @@ export const WavePhase = {
   Victory: 4,
   Dead: 5,
   Sandbox: 6,
+  /** between acts: decompile old sector, synthesise the next one */
+  Transition: 7,
 } as const;
 
 export interface WaveState {
@@ -356,6 +377,11 @@ export class World {
   readonly lasers = new LaserStore();
   readonly wells = new WellStore();
   readonly pillars = new Pillars();
+  readonly pools = new Pools();
+  /** current act (0 = Карантин, 1 = Плоть) */
+  act = 0;
+  /** active mini-boss slot (Матка), -1 if none */
+  miniBoss = -1;
   readonly grid = new SpatialGrid(-ARENA_HW - 2, -ARENA_HH - 2, ARENA_W + 4, ARENA_H + 4, 2, MAX_ENEMIES);
   /** scratch for spatial queries */
   readonly qbuf = new Int32Array(256);
@@ -471,6 +497,8 @@ export class World {
       queue: new Int32Array(cols * rows),
       targetCell: -1,
     };
+    const sw = WAVES[this.wave.index];
+    this.act = sw?.act ?? 0;
     buildArenaLayout(this);
   }
 }
@@ -479,14 +507,31 @@ export class World {
 export function buildArenaLayout(w: World): void {
   const P = w.pillars;
   P.count = 0;
-  P.add(-14, -8, 1.6);
-  P.add(14, -8, 1.6);
-  P.add(-14, 8, 1.6);
-  P.add(14, 8, 1.6);
-  P.add(0, -15, 1.2);
-  P.add(0, 15, 1.2);
-  P.add(-26, 0, 1.3);
-  P.add(26, 0, 1.3);
+  w.pools.count = 0;
+  if (w.act === 0) {
+    P.add(-14, -8, 1.6);
+    P.add(14, -8, 1.6);
+    P.add(-14, 8, 1.6);
+    P.add(14, 8, 1.6);
+    P.add(0, -15, 1.2);
+    P.add(0, 15, 1.2);
+    P.add(-26, 0, 1.3);
+    P.add(26, 0, 1.3);
+  } else {
+    // Плоть: asymmetric growths around a central open "womb"; flesh pools in the lanes
+    P.add(-11, -11, 1.8);
+    P.add(12, -9, 1.4);
+    P.add(-20, 6, 1.5);
+    P.add(19, 10, 1.9);
+    P.add(-3, 16, 1.2);
+    P.add(28, -12, 1.3);
+    P.add(-29, -8, 1.2);
+    w.pools.add(0, 6, 4.2);
+    w.pools.add(-22, -14, 3.6);
+    w.pools.add(22, -2, 3.4);
+    w.pools.add(-12, 16, 3.2);
+    w.pools.add(14, 18, 2.8);
+  }
   const F = w.flow;
   F.blocked.fill(0);
   for (let cy = 0; cy < F.rows; cy++) {

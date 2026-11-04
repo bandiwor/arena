@@ -149,7 +149,7 @@ void main(){
   // glitch inversion blocks
   if(g > 0.25){
     vec2 blk = floor(vUv * vec2(10.0, 18.0));
-    if(hash13(vec3(blk, tq + 7.0)) > 1.0 - (g - 0.25) * 0.12) col = vec3(1.0) - col.gbr;
+    if(hash13(vec3(blk, tq + 7.0)) > 1.0 - (g - 0.25) * 0.12) col = col.brg * 1.7 + vec3(0.015, 0.0, 0.03);
   }
   // damage vignette (crimson edges)
   vec2 vv = vUv - 0.5;

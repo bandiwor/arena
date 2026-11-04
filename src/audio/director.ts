@@ -34,6 +34,7 @@ const HUM: Partial<Record<number, SfxId>> = {
   [ET.Dart]: 'hum_dart',
   [ET.Bloater]: 'hum_bloater',
   [ET.Boss]: 'hum_boss',
+  [ET.Worm]: 'hum_worm',
 };
 
 /**
@@ -73,8 +74,8 @@ export class AudioDirector {
     const menu = info.mode === 'menu';
     const paused = info.mode === 'pause';
     const over = info.mode === 'over';
-    const calm = menu || ph === WavePhase.Upgrade || ph === WavePhase.Intro || ph === WavePhase.Clear || ph === WavePhase.Victory || over;
-    const boss = w.boss.id >= 0 && w.enemies.type[w.boss.id] === ET.Boss;
+    const calm = menu || ph === WavePhase.Transition || ph === WavePhase.Upgrade || ph === WavePhase.Intro || ph === WavePhase.Clear || ph === WavePhase.Victory || over;
+    const boss = (w.boss.id >= 0 && w.enemies.type[w.boss.id] === ET.Boss) || w.miniBoss >= 0;
 
     // ── tension: rises fast-ish (≈1.2 s), decays slowly (≈4 s)
     const target = calm ? 0 : Math.max(w.director.tension, boss ? 0.75 : 0);
@@ -112,7 +113,10 @@ export class AudioDirector {
     A.setMusicLP(paused ? 500 : calm ? 1400 : 2200 + 16000 * ss(0.05, 0.5, t + this.hype * 0.4), calm ? 1.5 : 1.0);
 
     // ── ambience beds
-    A.setBed('room', menu ? 0.35 : 0.5, 2);
+    const fleshAct = w.act === 1;
+    const trans = ph === WavePhase.Transition;
+    A.setBed('room', menu ? 0.35 : fleshAct ? 0.12 : 0.5, 3);
+    A.setBed('flesh', fleshAct ? 0.6 : 0, 3);
     A.setBed('calm', calm ? 0.55 : 0, 2.5);
     A.setBed('tension', calm ? 0 : ss(0.15, 0.85, t) * 0.55, t > 0.3 ? 2 : 3.5);
     A.setBed('corrupt', boss ? Math.min(1, info.corruption * 1.2) * 0.7 : 0, 2);
@@ -131,7 +135,7 @@ export class AudioDirector {
     A.setStateLP(cut, slow > 0.1 ? 0.06 : 0.35);
     // ── space: wetter in slow-mo, in the mirror arena and as the boss corrupts reality
     const ric = w.mutators & (1 << 3) ? 0.18 : 0;
-    A.setReverb(0.22 + slow * 0.45 + ric + info.corruption * 0.15 + (calm ? 0.1 : 0), 0.4);
+    A.setReverb(0.22 + slow * 0.45 + ric + info.corruption * 0.15 + (calm ? 0.1 : 0) + (trans ? 0.35 : 0), 0.4);
     // ── body: hover engine follows speed; heartbeat fades in at low HP and speeds up
     const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
     A.setHover(p.alive && !menu ? 0.06 + Math.min(1, sp / 12) * 0.12 + (p.dashT > 0 ? 0.15 : 0) : 0, 0.8 + Math.min(1, sp / 12) * 0.35 + (p.dashT > 0 ? 0.25 : 0));
@@ -226,6 +230,13 @@ export class AudioDirector {
           g = 0.3 + ch * 0.4;
           rate = 1 + ch * 0.6;
           break;
+        case ET.Worm: {
+          // loud grind while tunnelling, swelling right before it erupts; quiet on the surface
+          const st = E.st[i]!;
+          g = st === AS.Underground ? 0.75 : st === AS.Windup ? 0.9 + ch * 0.4 : 0.12;
+          rate = st === AS.Windup ? 1 + ch * 0.5 : 1;
+          break;
+        }
         case ET.Boss:
           g = 0.85;
           rate = 1 + info.corruption * 0.08;

@@ -13,6 +13,7 @@ export const MAX_PICKUPS = 128;
 export const MAX_LASERS = 6;
 export const MAX_WELLS = 4;
 export const MAX_PILLARS = 16;
+export const MAX_POOLS = 8;
 
 export const Team = { Player: 0, Enemy: 1 } as const;
 
@@ -41,9 +42,12 @@ export const ET = {
   Boss: 5,
   Bloater: 6,
   Dart: 7,
+  Worm: 8,
+  Parasite: 9,
+  Brood: 10,
 } as const;
 export type EnemyType = (typeof ET)[keyof typeof ET];
-export const ENEMY_TYPE_COUNT = 8;
+export const ENEMY_TYPE_COUNT = 11;
 
 export const WP = {
   Pulse: 0,
@@ -70,6 +74,10 @@ export const AS = {
   Stunned: 9,
   Guard: 10,
   Leap: 11,
+  Burrow: 12,
+  Underground: 13,
+  Emerge: 14,
+  Attached: 15,
 } as const;
 export type AIState = (typeof AS)[keyof typeof AS];
 

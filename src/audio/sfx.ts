@@ -62,12 +62,19 @@ export const SFX = [
   'heartbeat',
   'tinnitus',
   'riser',
+  'decompile',
+  'synth_boom',
+  'worm_dig',
+  'worm_burst',
+  'brood_birth',
+  'hum_worm',
 ] as const;
 
 /** Seamless loops (enemy hums, engine, heartbeat) — rendered with loopify. */
-export const LOOPS: ReadonlySet<SfxId> = new Set<SfxId>(['hum_gunner', 'hum_dart', 'hum_boss', 'hum_bloater', 'player_hover', 'heartbeat']);
+export const LOOPS: ReadonlySet<SfxId> = new Set<SfxId>(['hum_gunner', 'hum_dart', 'hum_boss', 'hum_bloater', 'hum_worm', 'player_hover', 'heartbeat']);
 /** Frequent sounds get several takes so rapid repeats never sound like a machine gun of clones. */
 export const VARIANTS: Partial<Record<SfxId, number>> = {
+  worm_dig: 2, worm_burst: 2,
   shoot_pulse: 4, shoot_needle: 3, shoot_scatter: 2, hit_flesh: 4, hit_plant: 3, hit_machine: 3, hit_crystal: 3, hit_void: 2,
   kill_flesh: 3, kill_plant: 2, kill_machine: 2, kill_crystal: 2, shell: 4, impact_wall: 3, enemy_shoot: 3, explode: 2, crit: 2,
 };
@@ -416,6 +423,50 @@ export function renderSfx(id: SfxId, sr: number, seed: number): Buf {
       const b = n(1.2).bandpass(300, 6000, 0.8).env(1.1, 0.15);
       b.mix(o(1.2, { wave: 'saw', f0: 110, f1: 880, detune: 20 }).lowpass(800, 6000).env(1.1, 0.15), 0, 0.3);
       return b.normalize(0.4);
+    }
+    case 'decompile': {
+      // the sector being taken apart: descending data-glitch sweep + granular stutter + sub fall
+      const b = new Buf(sr, 4.5);
+      b.mix(o(4, { wave: 'saw', f0: 1600, f1: 60, detune: 30 }).lowpass(6000, 200, 0.5).env(0.05, 1.2).crush(6, 3), 0, 0.35);
+      for (let k = 0; k < 40; k++) b.mix(o(0.05, { wave: k % 2 ? 'square' : 'noise', f0: r.range(300, 4000) }).crush(3, 8).env(0.001, 1), (k / 40) * 3.2 + r.float() * 0.05, 0.12 * (1 - k / 50));
+      b.mix(o(4.2, { wave: 'sine', f0: 80, f1: 28 }).env(0.3, 1), 0.2, 0.9);
+      b.mix(n(4).bandpass(300, 3000, 0.7).env(2.5, 0.4), 0.3, 0.25);
+      return b.echo(0.21, 0.45, 0.5).normalize(0.85);
+    }
+    case 'synth_boom': {
+      // matter written into the world: huge low boom + rising chord bloom + wet spray
+      const b = new Buf(sr, 5);
+      b.mix(o(3.5, { wave: 'sine', f0: 70, f1: 24 }).env(0.002, 1.3), 0, 1.6);
+      b.mix(n(2.5).lowpass(7000, 60, 0.3).env(0.001, 2), 0, 1);
+      for (const f of [110, 164.8, 220, 233.1, 329.6]) b.mix(o(4.5, { wave: 'saw', f0: f, detune: 22 }).lowpass(300, 3000).env(0.4, 1.6), 0.05, 0.12);
+      b.mix(n(1.2).bandpass(800, 300, 0.7).env(0.01, 2), 0.05, 0.5);
+      return b.drive(3).echo(0.27, 0.5, 0.5).normalize(1);
+    }
+    case 'worm_dig': {
+      const b = n(0.7).lowpass(900, 200, 0.5).env(0.02, 1.5);
+      for (let k = 0; k < 8; k++) b.mix(n(0.03).bandpass(1500).env(0.001, 2), r.float() * 0.5, 0.4);
+      b.mix(o(0.5, { wave: 'sine', f0: 90, f1: 40 }).env(0.01, 1.5), 0, 0.8);
+      return b.normalize(0.6);
+    }
+    case 'worm_burst': {
+      const b = n(0.9).lowpass(3500, 150, 0.4).env(0.002, 1.8);
+      b.mix(o(0.6, { wave: 'sine', f0: 110, f1: 35 }).env(0.002, 1.6), 0, 1.4);
+      b.mix(o(0.5, { wave: 'saw', f0: 220, f1: 90, vibrato: 0.15, vibRate: 30 }).lowpass(1500).env(0.01, 2), 0.02, 0.4); // shriek
+      for (let k = 0; k < 12; k++) b.mix(n(0.04).bandpass(1200, 600).env(0.001, 2), 0.05 + r.float() * 0.6, 0.3); // debris
+      return b.drive(2.5).normalize(0.9);
+    }
+    case 'brood_birth': {
+      const b = n(1.6).lowpass(1200, 200, 0.6).env(0.05, 1.5);
+      b.mix(o(1.4, { wave: 'saw', f0: 60, f1: 45, vibrato: 0.12, vibRate: 7, detune: 30 }).lowpass(500).env(0.2, 1.2), 0, 0.9);
+      for (let k = 0; k < 16; k++) b.mix(o(0.1, { wave: 'sine', f0: r.range(150, 400), f1: r.range(400, 900) }).env(0.005, 2), 0.3 + r.float() * 1, 0.25); // wet pops
+      return b.drive(2).normalize(0.9);
+    }
+    case 'hum_worm': {
+      // subterranean grind: low rumble with grit
+      const b = n(2.5).lowpass(160).gain(1.2);
+      b.mix(n(2.5).bandpass(500, 500, 0.6), 0, 0.25);
+      b.mix(o(2.5, { wave: 'saw', f0: 43, vibrato: 0.05, vibRate: 5 }).lowpass(200), 0, 0.5);
+      return loopify(b, 2, 0.4).drive(1.5).normalize(0.6);
     }
     case 'teleport': {
       const b = o(0.4, { wave: 'saw', f0: 2000, f1: 60, detune: 40 }).crush(5, 4).env(0.001, 1.5);

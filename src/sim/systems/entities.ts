@@ -63,6 +63,8 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   if (opts?.instant) E.st[i] = AS.Move;
   else w.events.push(Ev.SpawnTelegraph, x, y, type, def.spawnTime, affix);
   if (type === ET.Boss) w.boss.id = i;
+  if (type === ET.Brood) w.miniBoss = i;
+  E.buff[i] = 0;
   return i;
 }
 
@@ -183,9 +185,11 @@ export function damageEnemy(
   crit: boolean,
 ): boolean {
   const E = w.enemies;
-  if (!E.alive[i] || E.st[i] === AS.Spawning) return false;
+  if (!E.alive[i] || E.st[i] === AS.Spawning || E.st[i] === AS.Underground) return false;
   const t = E.type[i]! as EnemyType;
   const def = enemyDef(t);
+  // a feeding parasite hardens its host
+  if (E.buff[i]! > 0) dmg *= 0.6;
   if (E.affix[i]! & Affix.Armored) dmg *= 0.75;
   if (t === ET.Boss && w.boss.dying > 0) return false;
   E.hp[i] = E.hp[i]! - dmg;
@@ -242,6 +246,7 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
     w.events.push(Ev.Explosion, x, y, 2.5, 0.6, Team.Enemy);
   }
   if (w.boss.id === i) w.boss.id = -1;
+  if (w.miniBoss === i) w.miniBoss = -1;
   removeEnemy(w, i);
 }
 

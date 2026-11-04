@@ -1,6 +1,6 @@
 import { Ev } from '../../core/events';
 import { angDiff, datan2 } from '../../core/detmath';
-import { ARENA_HH, ARENA_HW, BK, DT, ET, Team, WP } from '../constants';
+import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team, WP } from '../constants';
 import type { World } from '../world';
 import { damageEnemy, explode, hurtPlayer, removeBullet } from './entities';
 import { enemyDef } from '../content/enemies';
@@ -193,7 +193,7 @@ export function collideBullets(w: World): void {
     let bestT = 2;
     for (let k = 0; k < n; k++) {
       const e = w.qbuf[k]!;
-      if (!E.alive[e] || e === B.lastHit[i] || E.st[e] === 0) continue;
+      if (!E.alive[e] || e === B.lastHit[i] || E.st[e] === AS.Spawning || E.st[e] === AS.Underground) continue;
       const rr = E.r[e]! + br;
       const t = segHitT(E.x[e]!, E.y[e]!, x0, y0, x1, y1, rr);
       if (t >= 0 && t < bestT) {
