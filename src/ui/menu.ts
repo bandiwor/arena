@@ -10,6 +10,8 @@ const LS_SETTINGS = 'null-arena:settings';
 
 interface Settings {
   volume: number;
+  ambience: number;
+  binaural: boolean;
   music: number;
   shake: number;
   quality: number;
@@ -17,7 +19,7 @@ interface Settings {
 }
 
 function loadSettings(): Settings {
-  const d: Settings = { volume: 0.8, music: 0.55, shake: 1, quality: 1, difficulty: 1 };
+  const d: Settings = { volume: 0.8, music: 0.55, ambience: 0.7, binaural: true, shake: 1, quality: 1, difficulty: 1 };
   try {
     const s = localStorage.getItem(LS_SETTINGS);
     if (s) return { ...d, ...(JSON.parse(s) as Partial<Settings>) };
@@ -71,7 +73,7 @@ export class Menus {
       else this.action(t.dataset['a']);
     });
     root.addEventListener('pointerenter', (e) => {
-      if ((e.target as HTMLElement).classList?.contains('btn')) game.audio.play('ui_hover', 0, 1, 1, 0.05);
+      if ((e.target as HTMLElement).classList?.contains('btn')) game.audio.playUi('ui_hover', 0.8);
     }, true);
     game.renderer.juice.shakeScale = this.settings.shake;
     game.renderer.renderScale = this.settings.quality;
@@ -99,13 +101,15 @@ export class Menus {
     return e;
   }
 
-  private async ensureAudio(): Promise<void> {
-    if (!this.game.audio.ctx) {
-      const p = this.game.audio.init(7);
-      this.game.audio.setVolume(this.settings.volume, this.settings.music);
-      await p;
+  /** boots audio on the first gesture; synthesis continues in the background */
+  private ensureAudio(): void {
+    const a = this.game.audio;
+    if (!a.ctx) {
+      a.binaural = this.settings.binaural;
+      void a.init(7);
+      a.setVolume(this.settings.volume, this.settings.music, this.settings.ambience);
     }
-    this.game.audio.resume();
+    a.resume();
   }
 
   private buildMain(): void {
@@ -125,6 +129,8 @@ export class Menus {
       <div class="row">
         <label class="field">ЗВУК <input type="range" min="0" max="1" step="0.05" data-k="volume" value="${s.volume}"></label>
         <label class="field">МУЗЫКА <input type="range" min="0" max="1" step="0.05" data-k="music" value="${s.music}"></label>
+        <label class="field">АТМОСФЕРА <input type="range" min="0" max="1" step="0.05" data-k="ambience" value="${s.ambience}"></label>
+        <button class="btn alt small" data-a="binaural" title="HRTF: точное положение звука в наушниках">${s.binaural ? '3D · НАУШНИКИ' : '3D · КОЛОНКИ'}</button>
         <label class="field">ТРЯСКА <input type="range" min="0" max="1.5" step="0.05" data-k="shake" value="${s.shake}"></label>
         <label class="field">КАЧЕСТВО <input type="range" min="0.5" max="1" step="0.25" data-k="quality" value="${s.quality}"></label>
       </div>
@@ -134,7 +140,8 @@ export class Menus {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-d],[data-a]');
       if (!t) return;
       // audio boots in the background — never delay the game on sound synthesis
-      void this.ensureAudio().then(() => this.game.audio.play('ui_click'));
+      this.ensureAudio();
+      this.game.audio.playUi('ui_click');
       if (t.dataset['d']) {
         s.difficulty = parseInt(t.dataset['d'], 10);
         saveSettings(s);
@@ -150,10 +157,10 @@ export class Menus {
         this.seed = parseInt(t.value, 10) >>> 0;
         return;
       }
-      if (k === 'volume' || k === 'music' || k === 'shake' || k === 'quality') {
+      if (k === 'volume' || k === 'music' || k === 'ambience' || k === 'shake' || k === 'quality') {
         s[k] = parseFloat(t.value);
         saveSettings(s);
-        this.game.audio.setVolume(s.volume, s.music);
+        this.game.audio.setVolume(s.volume, s.music, s.ambience);
         this.game.renderer.juice.shakeScale = s.shake;
         if (k === 'quality') {
           this.game.renderer.renderScale = s.quality;
@@ -217,6 +224,14 @@ export class Menus {
         el.href = URL.createObjectURL(new Blob([JSON.stringify(r)], { type: 'application/json' }));
         el.download = `null-arena-${r.seed}.json`;
         el.click();
+        break;
+      }
+      case 'binaural': {
+        this.settings.binaural = !this.settings.binaural;
+        saveSettings(this.settings);
+        this.game.audio.setBinaural(this.settings.binaural);
+        const b = this.main.querySelector('[data-a="binaural"]');
+        if (b) b.textContent = this.settings.binaural ? '3D · НАУШНИКИ' : '3D · КОЛОНКИ';
         break;
       }
       case 'menu':

@@ -152,6 +152,7 @@ html, body {
 }
 .btn:hover { background: var(--cyan); color: var(--void); }
 .btn.alt { color: var(--muted); border-color: rgb(127 134 168 / 0.4); box-shadow: none; }
+.btn.small { padding: 6px 12px; font-size: 11px; letter-spacing: 0.15em; }
 .btn.alt:hover { background: rgb(127 134 168 / 0.2); color: var(--ink); }
 .field { font: 400 12px var(--mono); color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .field input[type='text'] { background: transparent; border: 1px solid var(--line); color: var(--ink); font: 400 13px var(--mono); padding: 6px 8px; width: 120px; }

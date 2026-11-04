@@ -251,7 +251,7 @@ left.appendChild(animBox);
 left.appendChild(btns('Камера', ['iso', 'game', 'top', 'front', 'close'], (k) => camPreset(k)));
 left.appendChild(btns('FX', Object.keys(FX), runFx));
 left.appendChild(btns('FX loop', ['off', ...Object.keys(FX).filter((k) => !k.startsWith('decal'))], (k) => (anim.loopFx = k === 'off' ? '' : k), (k) => (k === 'off' ? !anim.loopFx : anim.loopFx === k)));
-left.appendChild(btns('Звуки', [...SFX], (k) => audio.play(k as SfxId, 0, 1, 1, 0)));
+left.appendChild(btns('Звуки', [...SFX], (k) => audio.playUi(k as SfxId)));
 left.appendChild(btns('Мутатор (пол)', ['none', ...MUTATORS.map((m) => m.key)], (k) => {
   for (const m of MUTATORS) setMutator(world, m.id, m.key === k);
 }));

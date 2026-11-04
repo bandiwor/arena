@@ -54,10 +54,9 @@ export class Buf {
     // simple resonant 2-pole state variable filter
     let low = 0;
     let band = 0;
+    let F = 0;
     for (let i = 0; i < this.n; i++) {
-      const t = i / this.n;
-      const f = f0 * Math.pow(f1 / f0, t);
-      const F = 2 * Math.sin((Math.PI * Math.min(f, this.sr * 0.45)) / this.sr);
+      if ((i & 31) === 0) F = coef(f0, f1, i / this.n, this.sr);
       const q = 1 - res * 0.95;
       low += F * band;
       const high = this.d[i]! - low - q * band;
@@ -69,10 +68,9 @@ export class Buf {
   highpass(f0: number, f1 = f0): this {
     let low = 0;
     let band = 0;
+    let F = 0;
     for (let i = 0; i < this.n; i++) {
-      const t = i / this.n;
-      const f = f0 * Math.pow(f1 / f0, t);
-      const F = 2 * Math.sin((Math.PI * Math.min(f, this.sr * 0.45)) / this.sr);
+      if ((i & 31) === 0) F = coef(f0, f1, i / this.n, this.sr);
       low += F * band;
       const high = this.d[i]! - low - band;
       band += F * high;
@@ -83,10 +81,9 @@ export class Buf {
   bandpass(f0: number, f1 = f0, q = 0.5): this {
     let low = 0;
     let band = 0;
+    let F = 0;
     for (let i = 0; i < this.n; i++) {
-      const t = i / this.n;
-      const f = f0 * Math.pow(f1 / f0, t);
-      const F = 2 * Math.sin((Math.PI * Math.min(f, this.sr * 0.45)) / this.sr);
+      if ((i & 31) === 0) F = coef(f0, f1, i / this.n, this.sr);
       low += F * band;
       const high = this.d[i]! - low - (1 - q) * band;
       band += F * high;
@@ -127,6 +124,12 @@ export class Buf {
   }
 }
 
+/** SVF coefficient for a log sweep f0→f1 at position t (0..1) */
+function coef(f0: number, f1: number, t: number, sr: number): number {
+  const f = f0 === f1 ? f0 : f0 * Math.exp(Math.log(f1 / f0) * t);
+  return 2 * Math.sin((Math.PI * Math.min(f, sr * 0.45)) / sr);
+}
+
 export type Wave = 'sine' | 'saw' | 'square' | 'tri' | 'noise';
 
 export interface OscOpts {
@@ -150,13 +153,15 @@ export function osc(sr: number, dur: number, o: OscOpts, rng: Rng): Buf {
   const f1 = o.f1 ?? o.f0;
   const amp = o.amp ?? 1;
   const voices = o.detune ? 3 : 1;
+  const sweep = f1 !== o.f0;
+  const lr = sweep ? Math.log(f1 / o.f0) : 0;
   for (let v = 0; v < voices; v++) {
     const dt = o.detune ? Math.pow(2, ((v - 1) * o.detune) / 1200) : 1;
     let ph = rng.float();
     let mph = 0;
     for (let i = 0; i < b.n; i++) {
       const t = i / b.n;
-      let f = o.f0 * Math.pow(f1 / o.f0, t) * dt;
+      let f = (sweep ? o.f0 * Math.exp(lr * t) : o.f0) * dt;
       if (o.vibrato) f *= 1 + Math.sin((i / sr) * Math.PI * 2 * (o.vibRate ?? 6)) * o.vibrato;
       if (o.fmRatio) {
         mph += (f * o.fmRatio) / sr;
@@ -211,4 +216,44 @@ export function pluck(sr: number, dur: number, freq: number, damp: number, rng: 
 
 export function noise(sr: number, dur: number, rng: Rng, amp = 1): Buf {
   return osc(sr, dur, { wave: 'noise', f0: 1, amp }, rng);
+}
+
+/** Stereo pair rendered from two decorrelated passes (different noise/phase seeds, same musical content). */
+export interface Stereo {
+  l: Buf;
+  r: Buf;
+}
+
+/**
+ * Make a buffer loop seamlessly: render `len + fade` seconds, then fold the tail over the head
+ * with an equal-power crossfade. Returns a new buffer of exactly `len` seconds.
+ */
+export function loopify(b: Buf, len: number, fade: number): Buf {
+  const out = new Buf(b.sr, len);
+  const n = out.n;
+  const f = Math.min(Math.floor(fade * b.sr), b.n - n);
+  for (let i = 0; i < n; i++) out.d[i] = b.d[i]!;
+  for (let i = 0; i < f; i++) {
+    const t = i / f;
+    const gIn = Math.sin(t * Math.PI * 0.5);
+    const gOut = Math.cos(t * Math.PI * 0.5);
+    out.d[i] = b.d[i]! * gIn + b.d[n + i]! * gOut;
+  }
+  return out;
+}
+
+/** Slow amplitude LFO (tremolo / swell), depth 0..1 */
+export function lfoAmp(b: Buf, rate: number, depth: number, phase = 0): Buf {
+  for (let i = 0; i < b.n; i++) {
+    const m = 1 - depth * (0.5 + 0.5 * Math.sin((i / b.sr) * rate * Math.PI * 2 + phase));
+    b.d[i] = b.d[i]! * m;
+  }
+  return b;
+}
+
+/** Peak of absolute value */
+export function peak(b: Buf): number {
+  let m = 0;
+  for (let i = 0; i < b.n; i++) m = Math.max(m, Math.abs(b.d[i]!));
+  return m;
 }

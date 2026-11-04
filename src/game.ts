@@ -1,4 +1,5 @@
 import { AudioEngine } from './audio/audio';
+import { AudioDirector } from './audio/director';
 import { Ev, EV_STRIDE } from './core/events';
 import { InputDevice } from './input';
 import { GameRenderer } from './render/renderer';
@@ -30,6 +31,8 @@ export class Game {
   sim: Sim;
   readonly renderer: GameRenderer;
   readonly audio = new AudioEngine();
+  readonly audioDirector = new AudioDirector(this.audio);
+  private readonly audioInfo = { mode: 'menu', combo: 0, comboTier: 0, timeScale: 1, corruption: 0 };
   readonly input: InputDevice;
   readonly hud: Hud;
   readonly recorder = new InputRecorder();
@@ -56,7 +59,6 @@ export class Game {
   /** scripted input used in menu attract mode */
   attract: InputFn | null = null;
   private overShown = false;
-  private intensity = 0;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -196,11 +198,15 @@ export class Game {
     const alpha = this.paused ? 1 : Math.min(1, this.acc / DT);
     const fxDt = this.paused ? 0 : realDt * J.simScale * this.timeScale;
     const w = this.world;
-    // music intensity
+    // adaptive mix: tension, combo, slow-mo, HP, mutators, boss corruption
     const bossAlive = w.boss.id >= 0 && w.enemies.type[w.boss.id] === ET.Boss;
-    this.intensity += (w.director.tension - this.intensity) * Math.min(1, realDt);
-    const calm = this.mode === 'menu' || w.wave.phase === WavePhase.Upgrade || w.wave.phase === WavePhase.Intro;
-    this.audio.setIntensity(this.intensity, bossAlive, calm);
+    const fxd = this.renderer.fx;
+    this.audioInfo.mode = this.mode;
+    this.audioInfo.combo = fxd.combo;
+    this.audioInfo.comboTier = fxd.comboTier;
+    this.audioInfo.timeScale = J.simScale;
+    this.audioInfo.corruption = w.boss.corruption;
+    this.audioDirector.update(realDt, w, this.audioInfo);
     J.glitchBase = bossAlive ? w.boss.corruption * 0.15 : 0;
     const r0 = performance.now();
     this.renderer.render(w, alpha, realDt, fxDt);

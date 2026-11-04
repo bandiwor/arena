@@ -1,5 +1,5 @@
 import { Rng } from '../core/rng';
-import { Buf, noise, osc, pluck } from './synth';
+import { Buf, loopify, noise, osc, pluck } from './synth';
 
 export const SFX = [
   'shoot_pulse',
@@ -53,7 +53,33 @@ export const SFX = [
   'bloat',
   'dart_dive',
   'combo',
+  'combo_end',
+  'hum_gunner',
+  'hum_dart',
+  'hum_boss',
+  'hum_bloater',
+  'player_hover',
+  'heartbeat',
+  'tinnitus',
+  'riser',
 ] as const;
+
+/** Seamless loops (enemy hums, engine, heartbeat) — rendered with loopify. */
+export const LOOPS: ReadonlySet<SfxId> = new Set<SfxId>(['hum_gunner', 'hum_dart', 'hum_boss', 'hum_bloater', 'player_hover', 'heartbeat']);
+/** Frequent sounds get several takes so rapid repeats never sound like a machine gun of clones. */
+export const VARIANTS: Partial<Record<SfxId, number>> = {
+  shoot_pulse: 4, shoot_needle: 3, shoot_scatter: 2, hit_flesh: 4, hit_plant: 3, hit_machine: 3, hit_crystal: 3, hit_void: 2,
+  kill_flesh: 3, kill_plant: 2, kill_machine: 2, kill_crystal: 2, shell: 4, impact_wall: 3, enemy_shoot: 3, explode: 2, crit: 2,
+};
+/** Mix category per sound: weapon (player), impact, enemy, world, ui */
+export type Cat = 'weapon' | 'impact' | 'enemy' | 'world' | 'ui';
+export function categoryOf(id: SfxId): Cat {
+  if (id.startsWith('shoot_') || id === 'shell' || id === 'weapon_switch' || id === 'dash') return 'weapon';
+  if (id.startsWith('hit_') || id.startsWith('kill_') || id === 'crit' || id === 'impact_wall' || id === 'shield_block') return 'impact';
+  if (id.startsWith('ui_') || id === 'upgrade' || id === 'legendary' || id === 'combo' || id === 'combo_end' || id === 'wave_start' || id === 'wave_clear' || id === 'mutator') return 'ui';
+  if (id.startsWith('enemy_') || id.startsWith('archer') || id.startsWith('gunner') || id.startsWith('charger') || id === 'bloat' || id === 'dart_dive' || id.startsWith('hum_') || id === 'spawn' || id === 'spawn_done') return 'enemy';
+  return 'world';
+}
 export type SfxId = (typeof SFX)[number];
 export const SFX_INDEX: Record<SfxId, number> = Object.fromEntries(SFX.map((k, i) => [k, i])) as Record<SfxId, number>;
 
@@ -337,6 +363,59 @@ export function renderSfx(id: SfxId, sr: number, seed: number): Buf {
       const b = new Buf(sr, 0.6);
       [660, 880, 1320].forEach((f, k) => b.mix(o(0.25, { wave: 'square', f0: f, pw: 0.25 }).lowpass(4000).env(0.002, 2), k * 0.045, 0.3));
       return b.echo(0.08, 0.35, 0.5).normalize(0.45);
+    }
+    case 'combo_end': {
+      const b = o(0.7, { wave: 'saw', f0: 880, f1: 110, detune: 20 }).lowpass(4000, 300).env(0.01, 2);
+      b.mix(n(0.5).bandpass(3000, 300, 0.6).env(0.02, 2), 0, 0.3);
+      return b.normalize(0.35);
+    }
+    case 'hum_gunner': {
+      // hovering drone: rotor buzz with blade-rate AM + motor whine
+      const b = o(2.5, { wave: 'saw', f0: 92, detune: 18 }).lowpass(700);
+      for (let i = 0; i < b.n; i++) b.d[i] = b.d[i]! * (0.6 + 0.4 * Math.sin((i / sr) * Math.PI * 2 * 36));
+      b.mix(o(2.5, { wave: 'sine', f0: 740, vibrato: 0.004, vibRate: 3 }), 0, 0.08);
+      return loopify(b, 2, 0.4).normalize(0.5);
+    }
+    case 'hum_dart': {
+      const b = o(2.4, { wave: 'square', f0: 210, pw: 0.15, vibrato: 0.03, vibRate: 13 }).lowpass(1800);
+      for (let i = 0; i < b.n; i++) b.d[i] = b.d[i]! * (0.5 + 0.5 * Math.sin((i / sr) * Math.PI * 2 * 90));
+      return loopify(b, 2, 0.4).normalize(0.45);
+    }
+    case 'hum_boss': {
+      const b = o(4.5, { wave: 'saw', f0: 36.7, detune: 25, vibrato: 0.01, vibRate: 0.4 }).lowpass(220, 300, 0.5);
+      b.mix(o(4.5, { wave: 'sine', f0: 73.4 }), 0, 0.5);
+      b.mix(n(4.5).bandpass(900, 1200, 0.85), 0, 0.15);
+      return loopify(b, 4, 0.5).drive(1.5).normalize(0.7);
+    }
+    case 'hum_bloater': {
+      // wet gurgle: filtered noise bubbles + low wobble
+      const b = n(2.5).lowpass(260).gain(0.6);
+      for (let k = 0; k < 14; k++) b.mix(o(0.09, { wave: 'sine', f0: r.range(180, 420), f1: r.range(500, 900) }).env(0.005, 2), r.range(0, 2.3), 0.35);
+      b.mix(o(2.5, { wave: 'sine', f0: 55, vibrato: 0.2, vibRate: 3 }), 0, 0.4);
+      return loopify(b, 2, 0.4).normalize(0.45);
+    }
+    case 'player_hover': {
+      const b = o(2.4, { wave: 'saw', f0: 110, detune: 6 }).lowpass(500);
+      b.mix(n(2.4).bandpass(1200, 1200, 0.7), 0, 0.12);
+      b.mix(o(2.4, { wave: 'sine', f0: 55 }), 0, 0.6);
+      return loopify(b, 2, 0.4).normalize(0.4);
+    }
+    case 'heartbeat': {
+      const b = new Buf(sr, 1.0);
+      const thump = (): Buf => o(0.18, { wave: 'sine', f0: 62, f1: 38 }).env(0.004, 2.5).lowpass(200);
+      b.mix(thump(), 0.0, 1);
+      b.mix(thump(), 0.24, 0.7);
+      return b.normalize(0.8);
+    }
+    case 'tinnitus': {
+      const b = o(2.2, { wave: 'sine', f0: 4100 }).env(0.03, 1.4);
+      b.mix(o(2.2, { wave: 'sine', f0: 4113 }).env(0.03, 1.4), 0, 0.6);
+      return b.normalize(0.18);
+    }
+    case 'riser': {
+      const b = n(1.2).bandpass(300, 6000, 0.8).env(1.1, 0.15);
+      b.mix(o(1.2, { wave: 'saw', f0: 110, f1: 880, detune: 20 }).lowpass(800, 6000).env(1.1, 0.15), 0, 0.3);
+      return b.normalize(0.4);
     }
     case 'teleport': {
       const b = o(0.4, { wave: 'saw', f0: 2000, f1: 60, detune: 40 }).crush(5, 4).env(0.001, 1.5);

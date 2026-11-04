@@ -152,6 +152,7 @@ export class FxDirector {
   private readonly dsId: SfxId[] = new Array<SfxId>(16).fill('shell');
   private readonly dsT = new Float32Array(16);
   private readonly dsX = new Float32Array(16);
+  private readonly dsY = new Float32Array(16);
   private readonly dsV = new Float32Array(16);
   private dsCursor = 0;
   /** HUD hook */
@@ -166,11 +167,19 @@ export class FxDirector {
 
   // ───────────────────────────── primitives
 
-  sfx(id: SfxId, x: number, vol = 1, rate = 1, gap = 0.03, maxSame = 6): void {
+  /**
+   * Positional sound at world (x, y), relative to the listener (the player).
+   * y = NaN → non-positional (stingers, UI-like cues).
+   */
+  sfx(id: SfxId, x: number, y: number, vol = 1, rate = 1, gap = 0.03, maxSame = 6): void {
     if (this.quiet || !this.d.audio) return;
-    const pan = (x - this.d.camera.fx) / 22;
-    this.d.audio.play(id, pan, vol, rate * (0.96 + this.rng.float() * 0.08), gap, maxSame);
+    const lx = this.listenerX;
+    const ly = this.listenerY;
+    this.d.audio.play(id, Number.isFinite(y) ? x - lx : 0, Number.isFinite(y) ? y - ly : Number.NaN, vol, rate * (0.96 + this.rng.float() * 0.08), gap, maxSame);
   }
+  /** listener = the player's ears (updated every frame) */
+  listenerX = 0;
+  listenerY = 0;
 
   timed(kind: number, mode: number, x: number, h: number, y: number, a: number, len: number, w: number, c: ArrayLike<number>, k: number, life: number, grow = 0): void {
     const i = this.tCursor;
@@ -244,10 +253,10 @@ export class FxDirector {
     if (crit) {
       this.timed(QK.Ring, QM.Billboard, x, h, y, 0, 2.2, 2.2, C_RARE[3], 3, 0.25);
       this.burst(10, x, h, y, 0, TAU, 6, 12, 2, 0.3, C_RARE[3], 3, 0.1, 3, 0, PS.Spark, 0);
-      this.sfx('crit', x, 0.6, 1, 0.05);
+      this.sfx('crit', x, y, 0.6, 1, 0.05);
     }
     if (rarity >= 2) this.d.juice.addTrauma(0.03 * rarity);
-    this.sfx(g.hitSfx, x, 0.5 + Math.min(0.5, dmg / 60), 1, 0.035);
+    this.sfx(g.hitSfx, x, y, 0.5 + Math.min(0.5, dmg / 60), 1, 0.035);
   }
 
   killFx(mat: number, type: number, x: number, y: number, ang: number, radius: number, rarity: number, overkill: number, face: number, seed: number): void {
@@ -274,7 +283,7 @@ export class FxDirector {
         this.burst(10, x, h, y, 0, TAU, 0.5, 2, 2, 1.6, K0, 1, 1.2, 1.5, -0.6, PS.Smoke, 0.7);
         this.burst(8, x, h, y, 0, TAU, 2, 5, 3, 0.8, C_HAZ, 3, 0.4, 3, 0, PS.Ember, 0);
         this.d.floor.decals.add(x, y, 2.6 * size, this.rng.float() * TAU, 0.002, 0.002, 0.003, 0.7, 1, this.rng.float() * 100);
-        this.sfx('explode', x, 0.5, 1.3, 0.06);
+        this.sfx('explode', x, y, 0.5, 1.3, 0.06);
         break;
       case Mat.Plant:
         this.burst(18, x, h + 0.5, y, 0, TAU, 1.5, 6, 4, 2.2, K1, 1, 0.3, 2.5, 5, PS.Leaf, 1);
@@ -307,7 +316,7 @@ export class FxDirector {
       this.wave(x, y, 0.5);
     }
     this.d.floor.ripple(x, y, 0.4 * size);
-    this.sfx(g.killSfx, x, 0.7, 0.9 + 0.2 * this.rng.float(), 0.04);
+    this.sfx(g.killSfx, x, y, 0.7, (0.9 + 0.2 * this.rng.float()) * (1 + Math.min(0.22, this.combo * 0.008)), 0.04);
   }
 
   explosionFx(x: number, y: number, radius: number, power: number, team: number): void {
@@ -335,7 +344,7 @@ export class FxDirector {
     this.d.juice.doFlash(Math.min(0.25, power * 0.04), 1, 0.7, 0.4);
     this.d.juice.punch(0.25);
     this.d.audio?.duck(0.4, 0.3);
-    this.sfx(R > 5 ? 'explode_big' : 'explode', x, 0.9, 1, 0.05);
+    this.sfx(R > 5 ? 'explode_big' : 'explode', x, y, 0.9, 1, 0.05);
   }
 
   muzzleFx(x: number, y: number, ang: number, weapon: number, rarity: number): void {
@@ -354,29 +363,29 @@ export class FxDirector {
     J.kick(-Math.cos(ang), -Math.sin(ang), wd.recoil * 3);
     switch (weapon) {
       case WP.Pulse:
-        this.sfx('shoot_pulse', x, 0.45, 1, 0.04);
+        this.sfx('shoot_pulse', x, y, 0.45, 1, 0.04);
         break;
       case WP.Scatter:
-        this.sfx('shoot_scatter', x, 0.8);
+        this.sfx('shoot_scatter', x, y, 0.8);
         this.burst(8, x, 0.7, y, ang, 0.8, 2, 5, 1, 0.6, K7, 1, 0.5, 3, -0.3, PS.Smoke, 0.5);
         J.punch(0.15);
         break;
       case WP.Needler:
-        this.sfx('shoot_needle', x, 0.35, 1, 0.02, 10);
+        this.sfx('shoot_needle', x, y, 0.35, 1, 0.02, 10);
         break;
       case WP.Launcher:
-        this.sfx('shoot_launcher', x, 0.75);
+        this.sfx('shoot_launcher', x, y, 0.75);
         this.burst(6, x, 0.7, y, ang, 0.6, 1, 4, 1, 0.8, K7, 1, 0.6, 2, -0.4, PS.Smoke, 0.5);
         break;
       case WP.Rail:
-        this.sfx('shoot_rail', x, 1);
+        this.sfx('shoot_rail', x, y, 1);
         J.addChroma(0.6);
         J.addGlitch(0.15);
         J.punch(0.35);
         J.stop(0.04);
         break;
       case WP.Singularity:
-        this.sfx('shoot_sing', x, 1);
+        this.sfx('shoot_sing', x, y, 1);
         J.addChroma(1);
         J.addGlitch(0.4);
         J.doFlash(0.25, 0.6, 0.3, 1);
@@ -410,7 +419,7 @@ export class FxDirector {
     if (weapon === WP.Rail) {
       // spent energy cell: glowing, hot
       P.emit(ox, 0.65, oy, vx * 0.8, r.range(3, 5), vy * 0.8, 3.0, 1.2, 0.5, 3.0, 0.2, 1.5, 22, PS.Shard, 0);
-      this.queueSfx('shell', 0.38, mx, 0.35);
+      this.queueSfx('shell', 0.38, mx, my, 0.35);
       return;
     }
     const big = weapon === WP.Scatter;
@@ -420,15 +429,16 @@ export class FxDirector {
     P.emit(ox, 0.65, oy, vx, r.range(3, 5.5), vy, 2.4, cr, cg, cb, big ? 0.2 : 0.13, 1.2, 24, PS.Shard, 1);
     // tiny glint so the casing reads against the dark floor
     P.emit(ox, 0.65, oy, vx, r.range(3, 5.5), vy, 0.25, 1.5, 1.2, 0.6, 0.08, 1.2, 24, PS.Glow, 0);
-    this.queueSfx('shell', 0.32 + r.float() * 0.06, mx, big ? 0.3 : 0.18);
+    this.queueSfx('shell', 0.32 + r.float() * 0.06, mx, my, big ? 0.3 : 0.18);
   }
 
-  private queueSfx(id: SfxId, delay: number, x: number, vol: number): void {
+  private queueSfx(id: SfxId, delay: number, x: number, y: number, vol: number): void {
     const i = this.dsCursor;
     this.dsCursor = (this.dsCursor + 1) % 16;
     this.dsId[i] = id;
     this.dsT[i] = delay;
     this.dsX[i] = x;
+    this.dsY[i] = y;
     this.dsV[i] = vol;
   }
 
@@ -436,7 +446,7 @@ export class FxDirector {
     const def = enemyDef(type);
     const P = this.d.particles;
     if (!done) {
-      this.sfx(type === ET.Boss ? 'boss_phase' : 'spawn', x, type === ET.Boss ? 1 : 0.35, 1, 0.08, 4);
+      this.sfx(type === ET.Boss ? 'boss_phase' : 'spawn', x, y, type === ET.Boss ? 1 : 0.35, 1, 0.08, 4);
       for (let k = 0; k < 14; k++) {
         const a = this.rng.float() * TAU;
         const r = def.r * 2.5;
@@ -447,7 +457,7 @@ export class FxDirector {
       this.timed(QK.Flash, QM.Billboard, x, def.height * 0.5, y, 0, def.r * 5, def.r * 5, C_ENEMY, 1.5, 0.12);
       this.burst(18, x, def.height * 0.5, y, 0, TAU, 3, 9, 3, 0.4, C_ENEMY, 3, 0.1, 3, 6, PS.Pixel, 0);
       this.d.lights.flash(x, y, 1, 5 * def.r + 3, C_ENEMY[0]! * 4, C_ENEMY[1]! * 4, C_ENEMY[2]! * 4, 0.3);
-      this.sfx('spawn_done', x, 0.4, 1, 0.05);
+      this.sfx('spawn_done', x, y, 0.4, 1, 0.05);
       if (type === ET.Boss) {
         this.d.juice.addTrauma(0.8);
         this.d.juice.addGlitch(1);
@@ -484,7 +494,7 @@ export class FxDirector {
           this.timed(QK.Flash, QM.Billboard, x, 1, y, this.rng.float() * TAU, big ? 3.5 : 1.4, big ? 3.5 : 1.4, C_ENEMY_B, 2, 0.08);
           this.d.lights.flash(x, y, 1, big ? 9 : 4, C_ENEMY[0]! * 4, C_ENEMY[1]! * 4, C_ENEMY[2]! * 4, 0.1);
           this.burst(4, x, 1, y, a, 0.6, 5, 12, 1, 0.12, C_ENEMY_B, 3, 0.08, 6, 0, PS.Spark, 0);
-          this.sfx(big || c === BK.BossOrb ? 'enemy_orb' : 'enemy_shoot', x, big ? 0.6 : 0.35, 1, 0.05, 4);
+          this.sfx(big || c === BK.BossOrb ? 'enemy_orb' : 'enemy_shoot', x, y, big ? 0.6 : 0.35, 1, 0.05, 4);
           break;
         }
         case Ev.Hit: {
@@ -523,7 +533,7 @@ export class FxDirector {
           this.burst(bounce ? 6 : 5, x, 0.7, y, a + Math.PI, 1.6, 3, 9, 2, 0.2, col, 3, 0.07, 4, 10, PS.Spark, 0);
           this.timed(QK.Flash, QM.Billboard, x, 0.7, y, this.rng.float() * TAU, 0.9, 0.9, col, 1.5, 0.06);
           if (bounce) this.timed(QK.Ring, QM.Billboard, x, 0.7, y, 0, 1.4, 1.4, col, 2, 0.15);
-          if (team === Team.Player) this.sfx('impact_wall', x, 0.25, 1, 0.05, 3);
+          if (team === Team.Player) this.sfx('impact_wall', x, y, 0.25, 1, 0.05, 3);
           break;
         }
         case Ev.Explosion:
@@ -544,12 +554,13 @@ export class FxDirector {
           J.doFlash(0.15, 1, 0.1, 0.2);
           this.burst(20, x, 0.8, y, c, 1.8, 4, 12, 3, 0.35, C_PLAYER, 3, 0.1, 3, 18, PS.Spark, 0);
           this.burst(12, x, 0.8, y, 0, TAU, 2, 8, 3, 0.5, K8, 1, 0.12, 2, 10, PS.Pixel, 0);
-          this.sfx('player_hurt', x, 0.9, 1, 0.08);
+          this.sfx('player_hurt', x, y, 0.9, 1, 0.08);
+          this.d.audio?.hurt(Math.min(1, a / 25));
           this.d.audio?.duck(0.5, 0.4);
           break;
         }
         case Ev.PlayerDash: {
-          this.sfx('dash', x, 0.6);
+          this.sfx('dash', x, y, 0.6);
           this.ghostT = 0;
           this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 2.6, 2.6, C_PLAYER, 2, 0.25);
           this.burst(16, x, 0.4, y, a + Math.PI, 1.2, 3, 9, 1, 0.35, C_PLAYER, 2.5, 0.12, 4, 0, PS.Glow, 0);
@@ -577,11 +588,11 @@ export class FxDirector {
           break;
         }
         case Ev.WaveStart:
-          this.sfx(a > 0.5 ? 'boss_phase' : 'wave_start', 0, 0.8, 1, 0.5);
+          this.sfx(a > 0.5 ? 'boss_phase' : 'wave_start', 0, Number.NaN, 0.8, 1, 0.5);
           J.addGlitch(0.5);
           break;
         case Ev.WaveClear:
-          this.sfx('wave_clear', 0, 0.8, 1, 0.5);
+          this.sfx('wave_clear', 0, Number.NaN, 0.8, 1, 0.5);
           // the last kill of a wave gets the spotlight: zoom punch + slow-mo + camera pull
           J.slow(0.22, 0.9);
           J.punch(0.8);
@@ -599,7 +610,7 @@ export class FxDirector {
           this.wave(x, y, 2);
           this.d.floor.ripple(x, y, 2.5);
           this.timed(QK.Ring, QM.Ground, x, 0.1, y, 0, 30, 30, C_ENERGY, 3, 0.8);
-          this.sfx('boss_phase', x, 1, 1, 0.5);
+          this.sfx('boss_phase', x, y, 1, 1, 0.5);
           this.d.audio?.duck(0.7, 1.2);
           break;
         case Ev.BossDeath:
@@ -607,7 +618,7 @@ export class FxDirector {
           J.addGlitch(1.5);
           J.addTrauma(1);
           J.doFlash(0.6, 1, 1, 1);
-          this.sfx('boss_death', x, 1, 1, 1);
+          this.sfx('boss_death', x, y, 1, 1, 1);
           this.wave(x, y, 2);
           break;
         case Ev.Mutator: {
@@ -618,12 +629,12 @@ export class FxDirector {
               this.timed(QK.Ring, QM.Ground, this.d.camera.fx, 0.1, this.d.camera.fy, 0, 50, 50, C_MUT, 1.2, 1.4);
             }
             J.addGlitch(0.8);
-            this.sfx('mutator', 0, 0.8, 1, 0.5);
+            this.sfx('mutator', 0, Number.NaN, 0.8, 1, 0.5);
           }
           break;
         }
         case Ev.UpgradePicked:
-          this.sfx(a >= 3 ? 'legendary' : 'upgrade', 0, 0.8, 1, 0.3);
+          this.sfx(a >= 3 ? 'legendary' : 'upgrade', 0, Number.NaN, 0.8, 1, 0.3);
           if (a >= 2) {
             J.doFlash(0.3, C_RARE[3][0], C_RARE[3][1], C_RARE[3][2]);
             J.addGlitch(0.5);
@@ -641,7 +652,7 @@ export class FxDirector {
           J.doFlash(0.5, 1, 1, 1);
           break;
         case Ev.WeaponSwitch:
-          this.sfx('weapon_switch', this.d.camera.fx, 0.5, 1 + y * 0.05, 0.05);
+          this.sfx('weapon_switch', this.d.camera.fx, Number.NaN, 0.5, 1 + y * 0.05, 0.05);
           {
             const rc = C_RARE[Math.min(3, y)]!;
             const pl = w.player;
@@ -654,10 +665,10 @@ export class FxDirector {
           this.timed(QK.Flash, QM.Billboard, x, 1.6, y, 0, 2.4, 2.4, K9, 1.2, 0.12);
           this.burst(10, x, 1.6, y, a + Math.PI, 2.5, 2, 6, 2, 1, K10, 1, 0.22, 2.5, 5, PS.Leaf, 1);
           this.burst(10, x, 1.6, y, a, 0.4, 10, 20, 0, 0.18, C_ENEMY_B, 3, 0.08, 5, 0, PS.Spark, 0);
-          this.sfx('archer_release', x, 0.7, 1, 0.06);
+          this.sfx('archer_release', x, y, 0.7, 1, 0.06);
           break;
         case Ev.ChargerDash:
-          this.sfx('charger_roar', x, 0.8, 1, 0.1);
+          this.sfx('charger_roar', x, y, 0.8, 1, 0.1);
           this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 3.5, 3.5, C_ENEMY, 2, 0.3);
           this.burst(16, x, 0.2, y, a + Math.PI, 1.5, 2, 6, 1, 0.9, K11, 1, 0.9, 2, -0.2, PS.Smoke, 0.6);
           J.addTrauma(0.12);
@@ -669,7 +680,7 @@ export class FxDirector {
           this.d.floor.ripple(x, y, 1.5);
           this.wave(x, y, 1);
           J.addTrauma(0.4);
-          this.sfx('slam', x, 0.9, 1, 0.1);
+          this.sfx('slam', x, y, 0.9, 1, 0.1);
           break;
         case Ev.Implode: {
           J.stop(0.12);
@@ -686,7 +697,7 @@ export class FxDirector {
           this.burst(60, x, 0.7, y, 0, TAU, 2, 14, 6, 1.5, K15, 1, 0.15, 1.5, 4, PS.Pixel, 0);
           this.d.lights.flash(x, y, 2, 25, 12, 6, 20, 0.6);
           this.d.floor.decals.add(x, y, a * 1.3, 0, 0.04, 0.0, 0.08, 0.8, 1, this.rng.float() * 100);
-          this.sfx('implode', x, 1, 1, 0.2);
+          this.sfx('implode', x, y, 1, 1, 0.2);
           this.d.audio?.duck(0.8, 0.8);
           break;
         }
@@ -698,23 +709,23 @@ export class FxDirector {
           this.timed(QK.Lightning, QM.Ground, (x + a) / 2, 1.5, (y + b) / 2, Math.atan2(dy, dx), Math.sqrt(dx * dx + dy * dy), 1.5, C_ENERGY, 3, 0.3);
           J.addGlitch(1.2);
           this.wave(a, b, 1.2);
-          this.sfx('teleport', a, 1, 1, 0.2);
+          this.sfx('teleport', a, b, 1, 1, 0.2);
           break;
         }
         case Ev.LaserFire:
-          this.sfx('laser_warn', x, 0.8, 1, 0.5);
+          this.sfx('laser_warn', x, y, 0.8, 1, 0.5);
           break;
         case Ev.ShieldBlock: {
           const lc = K16;
           this.burst(8, x, 1, y, a + Math.PI, 1.8, 6, 14, 3, 0.25, lc, 1, 0.08, 4, 10, PS.Spark, 0);
           this.timed(QK.Ring, QM.Billboard, x, 1, y, 0, 1.6, 1.6, lc, 1.5, 0.15);
-          this.sfx('shield_block', x, 0.45, 1, 0.04);
+          this.sfx('shield_block', x, y, 0.45, 1, 0.04);
           break;
         }
         case Ev.Pickup:
           this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 3, 3, C_PICK, 3, 0.35);
           this.burst(16, x, 0.6, y, 0, TAU, 2, 6, 4, 0.5, C_PICK, 3, 0.12, 3, 0, PS.Glow, 0);
-          this.sfx('pickup', x, 0.6);
+          this.sfx('pickup', x, y, 0.6);
           break;
         case Ev.Telegraph:
           this.timed(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, a * 2, a * 2, C_ENEMY, 2.5, b, 1);
@@ -753,7 +764,7 @@ export class FxDirector {
     for (let i = 0; i < 16; i++) {
       if (this.dsT[i]! <= 0) continue;
       this.dsT[i] = this.dsT[i]! - dt;
-      if (this.dsT[i]! <= 0) this.sfx(this.dsId[i]!, this.dsX[i]!, this.dsV[i]!, 1, 0.02, 8);
+      if (this.dsT[i]! <= 0) this.sfx(this.dsId[i]!, this.dsX[i]!, this.dsY[i]!, this.dsV[i]!, 1, 0.02, 8);
     }
     // combo window
     if (this.comboT > 0) {
@@ -785,6 +796,8 @@ export class FxDirector {
     const pl = w.player;
     const ppx = pl.px + (pl.x - pl.px) * alpha;
     const ppy = pl.py + (pl.y - pl.py) * alpha;
+    this.listenerX = ppx;
+    this.listenerY = ppy;
     // player light + thrusters + crosshair
     if (pl.alive) {
       L.add(ppx, ppy, 1.4, 9, C_PLAYER[0]! * 2.2, C_PLAYER[1]! * 2.2, C_PLAYER[2]! * 2.2);
@@ -916,11 +929,11 @@ export class FxDirector {
       }
       // state transitions → audio cues & bursts
       if (st !== prev && prev !== 255 && st === AS.Windup) {
-        if (type === ET.Archer) this.sfx('archer_charge', x, 0.5, 1, 0.1, 3);
-        else if (type === ET.Gunner) this.sfx('gunner_charge', x, 0.35, 1, 0.06, 3);
-        else if (type === ET.Charger) this.sfx('charger_roar', x, 0.4, 1.3, 0.1, 2);
-        else if (type === ET.Bloater) this.sfx('bloat', x, 0.6, 1, 0.1, 3);
-        else if (type === ET.Dart) this.sfx('dart_dive', x, 0.45, 1, 0.08, 3);
+        if (type === ET.Archer) this.sfx('archer_charge', x, y, 0.5, 1, 0.1, 3);
+        else if (type === ET.Gunner) this.sfx('gunner_charge', x, y, 0.35, 1, 0.06, 3);
+        else if (type === ET.Charger) this.sfx('charger_roar', x, y, 0.4, 1.3, 0.1, 2);
+        else if (type === ET.Bloater) this.sfx('bloat', x, y, 0.6, 1, 0.1, 3);
+        else if (type === ET.Dart) this.sfx('dart_dive', x, y, 0.45, 1, 0.08, 3);
       }
       if (st === AS.Windup) {
         if (type === ET.Archer) {
@@ -1035,7 +1048,7 @@ export class FxDirector {
         L.add(cx, cy, 1.5, len * 0.5, 2, 0.3, 2.5);
         if (r.chance(0.3)) this.d.floor.decals.add(ex - dx * 0.5, ey - dy * 0.5, 0.8, r.float() * TAU, 0.01, 0.0, 0.02, 0.6, 1, r.float() * 100);
         this.d.juice.addTrauma(dt * 0.6);
-        if (w.tick % 30 === 0) this.sfx('laser_fire', cx, 0.4, 1, 0.4, 2);
+        if (w.tick % 30 === 0) this.sfx('laser_fire', cx, cy, 0.4, 1, 0.4, 2);
       }
     }
 
@@ -1092,7 +1105,7 @@ export class FxDirector {
         J.saturate = 1;
         J.addChroma(0.4 + k * 0.2);
         J.addGlitch(0.15 + k * 0.1);
-        this.sfx('combo', this.d.camera.fx, 0.6, 1 + k * 0.12, 0.1);
+        this.sfx('combo', this.d.camera.fx, Number.NaN, 0.6, 1 + k * 0.12, 0.1);
         break;
       }
     }
