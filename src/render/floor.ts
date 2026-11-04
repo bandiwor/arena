@@ -311,10 +311,14 @@ void main(){
   vec3 N = normalize(vN);
   vec3 lit = pointLights(vW, N, 0.2);
   vec3 col = vec3(0.012, 0.01, 0.025) + vec3(0.03, 0.025, 0.06) * lit;
-  float top = smoothstep(1.04, 1.1, vW.y);
+  // thin neon lip on the inner top edge only (the top face itself stays dark)
+  vec2 e2 = vec2(${ARENA_HW.toFixed(1)}, ${ARENA_HH.toFixed(1)}) - abs(vW.xz);
+  float edgeD = min(e2.x, e2.y);
+  float lip = 1.0 - clamp(abs(edgeD + 0.06) / 0.1, 0.0, 1.0);
+  float top = clamp((vW.y - 1.06) / 0.04, 0.0, 1.0) * lip;
   float scan = step(0.92, fract(vW.y * 3.0 - uTime * 0.5)) * 0.25;
   float seg = step(0.96, fract((vW.x + vW.z) * 0.25));
-  col += (top * 0.9 + scan * 0.3 + seg * 0.12) * vec3(0.35, 0.12, 1.0) * uTint;
+  col += (top * 1.6 + scan * 0.3 + seg * 0.12) * vec3(0.35, 0.12, 1.0) * uTint;
   gl_FragColor = vec4(col, 1.0);
 }`;
 const WALL_VERT = /* glsl */ `

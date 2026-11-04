@@ -85,7 +85,9 @@ void main(){
   vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0);
   vW = wp.xyz;
   vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * n);
-  vCol = color;
+  // individual variation: value ±12%, slight warm/cool shift (seed-driven)
+  float vs = fract(seed * 7.31);
+  vCol = color * (0.88 + vs * 0.24) * mix(vec3(1.08, 0.94, 0.96), vec3(0.94, 1.0, 1.1), fract(seed * 3.7));
   vMat = aMat;
   vFx = iFx;
   vAnim = iAnim;

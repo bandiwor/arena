@@ -19,6 +19,8 @@ import { QK, QM, type QuadBatch } from './quads';
 
 const TAU = Math.PI * 2;
 const TFX = 512;
+const COMBO_WINDOW = 2.6;
+export const COMBO_TIERS = [10, 25, 50, 100] as const;
 
 /** Per-material gore palette (linear rgb, HDR where it should glow). */
 interface Gore {
@@ -53,6 +55,7 @@ const C_HAZ = new Float32Array(3);
 const C_ENERGY = new Float32Array(3);
 const C_PICK = new Float32Array(3);
 const C_MUT = new Float32Array(3);
+const C_PUS = new Float32Array([0.9, 2.4, 0.3]);
 const C_RARE = [new Float32Array(3), new Float32Array(3), new Float32Array(3), new Float32Array(3)] as const;
 lin(PAL.player, C_PLAYER);
 lin(PAL.enemy, C_ENEMY);
@@ -135,6 +138,22 @@ export class FxDirector {
   private pdCursor = 0;
   /** muted when sim is fast-forwarding (replays at high speed) */
   quiet = false;
+  /** combo: kills chained within COMBO_WINDOW seconds (presentation only) */
+  combo = 0;
+  comboT = 0;
+  comboBest = 0;
+  /** last tier reached (10/25/50…) — HUD reads it for the pop animation */
+  comboTier = 0;
+  private hmT = 0;
+  private hmKill = false;
+  private ghostT = 0;
+  private lastKillX = 0;
+  private lastKillY = 0;
+  private readonly dsId: SfxId[] = new Array<SfxId>(16).fill('shell');
+  private readonly dsT = new Float32Array(16);
+  private readonly dsX = new Float32Array(16);
+  private readonly dsV = new Float32Array(16);
+  private dsCursor = 0;
   /** HUD hook */
   onEvent: ((type: number, d: Float32Array, o: number) => void) | null = null;
   private time = 0;
@@ -325,9 +344,12 @@ export class FxDirector {
     const P = this.d.particles;
     const J = this.d.juice;
     const big = 0.8 + wd.recoil;
-    this.timed(QK.Flash, QM.Billboard, x, 0.7, y, this.rng.float() * TAU, big * 1.6, big * 1.6, c, 2, 0.06);
+    this.timed(QK.Flash, QM.Billboard, x, 0.62, y, this.rng.float() * TAU, big * 1.6, big * 1.6, c, 2, 0.06);
+    // directional muzzle cone flame
+    this.timed(QK.Flash, QM.Ground, x + Math.cos(ang) * big * 0.5, 0.62, y + Math.sin(ang) * big * 0.5, ang, big * 2.2, big * 0.7, c, 1.6, 0.05);
+    this.ejectShell(x, y, ang, weapon);
     this.d.lights.flash(x, y, 1, 5 + wd.recoil * 6, c[0]! * 5, c[1]! * 5, c[2]! * 5, 0.07 + wd.recoil * 0.06);
-    this.burst(3 + Math.floor(wd.recoil * 10), x, 0.7, y, ang, 0.5, 8, 20, 1, 0.12, c, 3, 0.08, 6, 0, PS.Spark, 0);
+    this.burst(3 + Math.floor(wd.recoil * 10), x, 0.62, y, ang, 0.5, 8, 20, 1, 0.12, c, 3, 0.08, 6, 0, PS.Spark, 0);
     J.addTrauma(wd.shake * 0.5);
     J.kick(-Math.cos(ang), -Math.sin(ang), wd.recoil * 3);
     switch (weapon) {
@@ -368,6 +390,46 @@ export class FxDirector {
         }
         break;
     }
+  }
+
+  /** brass/energy casings fly out of the gun side, bounce once and lie on the floor */
+  private ejectShell(mx: number, my: number, ang: number, weapon: number): void {
+    if (weapon === WP.Launcher || weapon === WP.Singularity) return;
+    if (weapon === WP.Needler && this.rng.chance(0.6)) return;
+    const P = this.d.particles;
+    const r = this.rng;
+    // gun side = left-hand perpendicular of facing; eject up/back/out
+    const sx = -Math.sin(ang);
+    const sy = Math.cos(ang);
+    const out = r.range(3.5, 5.5);
+    const back = r.range(0.5, 2);
+    const vx = sx * out - Math.cos(ang) * back;
+    const vy = sy * out - Math.sin(ang) * back;
+    const ox = mx - Math.cos(ang) * 0.6;
+    const oy = my - Math.sin(ang) * 0.6;
+    if (weapon === WP.Rail) {
+      // spent energy cell: glowing, hot
+      P.emit(ox, 0.65, oy, vx * 0.8, r.range(3, 5), vy * 0.8, 3.0, 1.2, 0.5, 3.0, 0.2, 1.5, 22, PS.Shard, 0);
+      this.queueSfx('shell', 0.38, mx, 0.35);
+      return;
+    }
+    const big = weapon === WP.Scatter;
+    const cr = big ? 0.35 : 0.42;
+    const cg = big ? 0.03 : 0.28;
+    const cb = big ? 0.05 : 0.06;
+    P.emit(ox, 0.65, oy, vx, r.range(3, 5.5), vy, 2.4, cr, cg, cb, big ? 0.2 : 0.13, 1.2, 24, PS.Shard, 1);
+    // tiny glint so the casing reads against the dark floor
+    P.emit(ox, 0.65, oy, vx, r.range(3, 5.5), vy, 0.25, 1.5, 1.2, 0.6, 0.08, 1.2, 24, PS.Glow, 0);
+    this.queueSfx('shell', 0.32 + r.float() * 0.06, mx, big ? 0.3 : 0.18);
+  }
+
+  private queueSfx(id: SfxId, delay: number, x: number, vol: number): void {
+    const i = this.dsCursor;
+    this.dsCursor = (this.dsCursor + 1) % 16;
+    this.dsId[i] = id;
+    this.dsT[i] = delay;
+    this.dsX[i] = x;
+    this.dsV[i] = vol;
   }
 
   spawnFx(x: number, y: number, type: number, done: boolean): void {
@@ -428,11 +490,26 @@ export class FxDirector {
         case Ev.Hit: {
           const def = enemyDef(d);
           this.hitFx(b, x, y, def.height * 0.55, a, c, f > 0.5, e);
+          if (!this.hmKill || this.hmT <= 0) {
+            this.hmT = 0.13;
+            this.hmKill = false;
+          }
           break;
         }
         case Ev.Kill: {
           // face isn't in the event; ghost uses kill angle as facing
           this.killFx(b, c, x, y, a, d, e, f, a + Math.PI, this.rng.float());
+          this.hmT = 0.24;
+          this.hmKill = true;
+          this.lastKillX = x;
+          this.lastKillY = y;
+          this.addCombo();
+          if (c === ET.Bloater) {
+            // ruptured sac: glowing pus + acid ring
+            this.burst(30, x, 0.8, y, 0, TAU, 3, 10, 6, 0.9, C_PUS, 1, 0.2, 2, 20, PS.Blood, 0.4);
+            this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 6.4, 6.4, C_ENEMY_B, 2.2, 0.4);
+            this.d.floor.decals.add(x, y, 3, this.rng.float() * TAU, 0.12, 0.3, 0.03, 0.6, 0, this.rng.float() * 100);
+          }
           if (e >= 3) {
             J.stop(0.06);
             J.addChroma(0.4);
@@ -473,6 +550,7 @@ export class FxDirector {
         }
         case Ev.PlayerDash: {
           this.sfx('dash', x, 0.6);
+          this.ghostT = 0;
           this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 2.6, 2.6, C_PLAYER, 2, 0.25);
           this.burst(16, x, 0.4, y, a + Math.PI, 1.2, 3, 9, 1, 0.35, C_PLAYER, 2.5, 0.12, 4, 0, PS.Glow, 0);
           J.addChroma(0.25);
@@ -504,7 +582,12 @@ export class FxDirector {
           break;
         case Ev.WaveClear:
           this.sfx('wave_clear', 0, 0.8, 1, 0.5);
-          J.slow(0.3, 0.7);
+          // the last kill of a wave gets the spotlight: zoom punch + slow-mo + camera pull
+          J.slow(0.22, 0.9);
+          J.punch(0.8);
+          J.saturate = 1;
+          this.d.camera.focus(this.lastKillX, this.lastKillY, 1.1);
+          this.timed(QK.Ring, QM.Ground, this.lastKillX, 0.06, this.lastKillY, 0, 14, 14, C_PICK, 2.5, 0.7);
           J.doFlash(0.12, 0.6, 1, 1);
           break;
         case Ev.BossPhase:
@@ -559,6 +642,13 @@ export class FxDirector {
           break;
         case Ev.WeaponSwitch:
           this.sfx('weapon_switch', this.d.camera.fx, 0.5, 1 + y * 0.05, 0.05);
+          {
+            const rc = C_RARE[Math.min(3, y)]!;
+            const pl = w.player;
+            this.timed(QK.Ring, QM.Ground, pl.x, 0.06, pl.y, 0, 3.4, 3.4, rc, 2.5, 0.3);
+            this.burst(12, pl.x, 0.6, pl.y, 0, TAU, 2, 5, 2, 0.3, rc, 2.5, 0.1, 3, 0, PS.Pixel, 0);
+            if (y >= 2) J.addGlitch(0.12 * y);
+          }
           break;
         case Ev.ArcherRelease:
           this.timed(QK.Flash, QM.Billboard, x, 1.6, y, 0, 2.4, 2.4, K9, 1.2, 0.12);
@@ -659,6 +749,20 @@ export class FxDirector {
         if (this.waves[o + 2]! > 0.8) this.waves[o + 3] = 0;
       }
     }
+    // delayed sounds (shell casings landing)
+    for (let i = 0; i < 16; i++) {
+      if (this.dsT[i]! <= 0) continue;
+      this.dsT[i] = this.dsT[i]! - dt;
+      if (this.dsT[i]! <= 0) this.sfx(this.dsId[i]!, this.dsX[i]!, this.dsV[i]!, 1, 0.02, 8);
+    }
+    // combo window
+    if (this.comboT > 0) {
+      this.comboT -= dt;
+      if (this.comboT <= 0) {
+        this.combo = 0;
+        this.comboTier = 0;
+      }
+    }
     // pending decals
     for (let i = 0; i < 256; i++) {
       if (this.pdT[i]! <= 0) continue;
@@ -693,7 +797,23 @@ export class FxDirector {
         Qb.push(QK.Streak, QM.Ground, ppx, 0.5, ppy, Math.atan2(pl.vy, pl.vx), 4, 1.2, C_PLAYER[0]! * 2, C_PLAYER[1]! * 2, C_PLAYER[2]! * 2, 0, 0.2, 0);
         for (let k = 0; k < 3; k++) P.emit(ppx + r.sym() * 0.4, 0.3 + r.float() * 0.8, ppy + r.sym() * 0.4, 0, 0, 0, 0.3, C_PLAYER[0]! * 3, C_PLAYER[1]! * 3, C_PLAYER[2]! * 3, 0.2, 1, 0, PS.Pixel, 0);
       }
-      Qb.push(QK.Crosshair, QM.Ground, pl.ax, 0.08, pl.ay, 0, 1.3, 1.3, C_PLAYER[0]! * 1.5, C_PLAYER[1]! * 1.5, C_PLAYER[2]! * 1.5, 0, pl.firing ? 1 : 0, 0);
+      const cs = 1.3 * (1 + pl.recoil * 0.6);
+      Qb.push(QK.Crosshair, QM.Ground, pl.ax, 0.08, pl.ay, 0, cs, cs, C_PLAYER[0]! * 1.5, C_PLAYER[1]! * 1.5, C_PLAYER[2]! * 1.5, 0, pl.firing ? 1 : 0, 0);
+      if (this.hmT > 0) {
+        this.hmT -= dt;
+        const life = this.hmKill ? 0.24 : 0.13;
+        const p = 1 - Math.max(0, this.hmT) / life;
+        const s = this.hmKill ? 2.4 : 1.6;
+        if (this.hmKill) Qb.push(QK.Hitmarker, QM.Ground, pl.ax, 0.09, pl.ay, 0, s, s, 3.2, 0.25, 0.5, 0, p, 0);
+        else Qb.push(QK.Hitmarker, QM.Ground, pl.ax, 0.09, pl.ay, 0, s, s, 2.6, 2.6, 2.6, 0, p, 0);
+      }
+      if (pl.dashT > 0) {
+        this.ghostT -= dt;
+        if (this.ghostT <= 0) {
+          this.ghostT = 0.035;
+          this.d.entities.addPlayerGhost(ppx, ppy, pl.face);
+        }
+      }
       // low HP heartbeat
       if (pl.hp < pl.maxHp * 0.3) {
         const beat = Math.pow(Math.max(0, Math.sin(time * 7)), 8);
@@ -712,18 +832,20 @@ export class FxDirector {
       const a = Math.atan2(vy, vx);
       const kind = B.kind[i]!;
       const crit = B.crit[i] === 1;
+      const h0 = B.h0[i]!;
+      const ease = Math.min(1, B.age[i]! / 0.2);
       switch (kind) {
         case BK.Pulse:
         case BK.Pellet: {
           const c = crit ? C_RARE[3] : C_PLAYER;
           const k = crit ? 3.5 : 2.6;
           const len = kind === BK.Pulse ? 1.25 : 0.85;
-          Qb.push(QK.Capsule, QM.Ground, x, 0.7, y, a, len, crit ? 0.5 : 0.36, c[0]! * k, c[1]! * k, c[2]! * k, 0, 0, i);
+          Qb.push(QK.Capsule, QM.Ground, x, h0 + (0.7 - h0) * ease, y, a, len, crit ? 0.5 : 0.36, c[0]! * k, c[1]! * k, c[2]! * k, 0, 0, i);
           if ((i + w.tick) % 2 === 0) P.emit(x, 0.7, y, r.sym() * 0.3, r.sym() * 0.3, r.sym() * 0.3, 0.14, c[0]!, c[1]!, c[2]!, 0.14, 1, 0, PS.Glow, 0);
           break;
         }
         case BK.Needle:
-          Qb.push(QK.Needle, QM.Ground, x, 0.7, y, a, 1.1, 0.16, 0.6, 3, 2.2, 0, 0, i);
+          Qb.push(QK.Needle, QM.Ground, x, h0 + (0.7 - h0) * ease, y, a, 1.1, 0.16, 0.6, 3, 2.2, 0, 0, i);
           break;
         case BK.Grenade: {
           const p = B.age[i]! / Math.max(0.01, B.age[i]! + B.life[i]!);
@@ -749,20 +871,20 @@ export class FxDirector {
           break;
         }
         case BK.Bolt:
-          Qb.push(QK.Capsule, QM.Ground, x, 0.8, y, a, 1.0, 0.46, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
+          Qb.push(QK.Capsule, QM.Ground, x, h0 + (0.8 - h0) * ease, y, a, 1.0, 0.46, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
           break;
         case BK.Arrow:
-          Qb.push(QK.Arrow, QM.Ground, x, 1.2, y, a, 1.6, 0.42, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
+          Qb.push(QK.Arrow, QM.Ground, x, h0 + (1.1 - h0) * ease, y, a, 1.6, 0.42, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
           if ((i + w.tick) % 2 === 0) P.emit(x, 1.2, y, r.sym(), r.sym(), r.sym(), 0.3, 0.6, 2.2, 0.2, 0.1, 2, 0, PS.Glow, 0);
           break;
         case BK.BossOrb:
           Qb.push(QK.Orb, QM.Billboard, x, 1.1, y, 0, 1.15, 1.15, 2.2, 0.5, 3.2, 0, 0, i);
           break;
         case BK.Shard:
-          Qb.push(QK.Shard, QM.Ground, x, 1, y, a, 0.75, 0.55, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
+          Qb.push(QK.Shard, QM.Ground, x, h0 + (0.9 - h0) * ease, y, a, 0.75, 0.55, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
           break;
         default:
-          Qb.push(QK.Orb, QM.Billboard, x, 0.9, y, 0, 0.8, 0.8, 3, 0.4, 1.5, 0, 0, i);
+          Qb.push(QK.Orb, QM.Billboard, x, h0 + (0.9 - h0) * ease, y, 0, 0.8, 0.8, 3, 0.4, 1.5, 0, 0, i);
       }
     }
     if (this.lensS > 0) this.lensS = Math.max(0, this.lensS - dt * 2);
@@ -797,6 +919,8 @@ export class FxDirector {
         if (type === ET.Archer) this.sfx('archer_charge', x, 0.5, 1, 0.1, 3);
         else if (type === ET.Gunner) this.sfx('gunner_charge', x, 0.35, 1, 0.06, 3);
         else if (type === ET.Charger) this.sfx('charger_roar', x, 0.4, 1.3, 0.1, 2);
+        else if (type === ET.Bloater) this.sfx('bloat', x, 0.6, 1, 0.1, 3);
+        else if (type === ET.Dart) this.sfx('dart_dive', x, 0.45, 1, 0.08, 3);
       }
       if (st === AS.Windup) {
         if (type === ET.Archer) {
@@ -836,9 +960,21 @@ export class FxDirector {
             const aa = a + k2 * 0.175;
             Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(aa) * 4, 0.07, y + Math.sin(aa) * 4, aa, 7, 0.18, C_ENEMY[0]! * 1.5, C_ENEMY[1]! * 1.5, C_ENEMY[2]! * 1.5, 0, ch, i + k2);
           }
+        } else if (type === ET.Bloater) {
+          const pulse = 0.6 + 0.4 * Math.sin(time * (10 + ch * 30));
+          Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 6.4, 6.4, C_ENEMY[0]! * 1.8 * pulse, C_ENEMY[1]! * 1.8 * pulse, C_ENEMY[2]! * 1.8 * pulse, 0, ch, i);
+          L.add(x, y, 1.2, 3 + ch * 5, (1 + ch * 2) * pulse, ch * 2 * pulse, 0.6 * pulse);
+          if (r.chance(0.5)) P.emit(x + r.sym() * 0.6, 1.0 + r.float() * 0.6, y + r.sym() * 0.6, r.sym() * 2, r.range(1, 3), r.sym() * 2, 0.5, 0.9, 2.4, 0.3, 0.1, 1, 14, PS.Blood, 0.4);
+        } else if (type === ET.Dart) {
+          const a = E.aim[i]!;
+          Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(a) * 4.5, 0.07, y + Math.sin(a) * 4.5, a, 9, 0.35, C_ENEMY[0]! * 2, C_ENEMY[1]! * 2, C_ENEMY[2]! * 2, 0, ch, i);
+          if (r.chance(0.6)) P.emit(x - Math.cos(a) * 0.5, 0.9, y - Math.sin(a) * 0.5, -Math.cos(a) * 4, 0, -Math.sin(a) * 4, 0.15, C_HAZ[0]! * 3, C_HAZ[1]! * 3, C_HAZ[2]! * 3, 0.08, 2, 0, PS.Spark, 0);
         } else if (type === ET.Swarmer) {
           if (r.chance(0.4)) P.emit(x, 0.5, y, r.sym() * 2, 1, r.sym() * 2, 0.2, 3, 0.2, 0.3, 0.08, 1, 0, PS.Spark, 0);
         }
+      } else if (st === AS.Dash && type === ET.Dart) {
+        const a = E.aim[i]!;
+        Qb.push(QK.Streak, QM.Ground, x - Math.cos(a) * 1.2, 0.9, y - Math.sin(a) * 1.2, a, 3.5, 0.9, C_ENEMY_B[0]! * 2.5, C_ENEMY_B[1]! * 2.5, C_ENEMY_B[2]! * 2.5, 0, 0.3, 0);
       } else if (st === AS.Dash && type === ET.Charger) {
         const a = E.aim[i]!;
         Qb.push(QK.Streak, QM.Ground, x - Math.cos(a) * 1.5, 0.8, y - Math.sin(a) * 1.5, a, 5, 2, C_ENEMY[0]! * 2, C_ENEMY[1]! * 2, C_ENEMY[2]! * 2, 0, 0.3, 0);
@@ -941,6 +1077,25 @@ export class FxDirector {
     }
     L.endFrame();
     Qb.end(time);
+  }
+
+  private addCombo(): void {
+    this.combo++;
+    this.comboT = COMBO_WINDOW;
+    if (this.combo > this.comboBest) this.comboBest = this.combo;
+    const tiers = COMBO_TIERS;
+    for (let k = tiers.length - 1; k >= 0; k--) {
+      const t = tiers[k]!;
+      if (this.combo === t) {
+        this.comboTier = t;
+        const J = this.d.juice;
+        J.saturate = 1;
+        J.addChroma(0.4 + k * 0.2);
+        J.addGlitch(0.15 + k * 0.1);
+        this.sfx('combo', this.d.camera.fx, 0.6, 1 + k * 0.12, 0.1);
+        break;
+      }
+    }
   }
 
   get now(): number {

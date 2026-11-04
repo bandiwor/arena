@@ -16,6 +16,47 @@ import { makeEntityMaterial } from './shaders/entity';
 
 const GHOSTS = 64;
 const GHOST_TIME = 0.42;
+const PGHOSTS = 8;
+const PGHOST_TIME = 0.3;
+
+/**
+ * Yaw (sim angle) + optional lean: (lx, ly) is a sim-space vector whose length is the tilt angle in
+ * radians; the model's top tips toward it (hit stagger, leaning into motion, recoil).
+ */
+export function writeMatrixLean(arr: Float32Array, o: number, x: number, h: number, y: number, face: number, s: number, lx: number, ly: number): void {
+  const ang = Math.sqrt(lx * lx + ly * ly);
+  if (ang < 1e-4) return writeMatrix(arr, o, x, h, y, face, s);
+  // axis = up × lean (three coords: lean = (lx, 0, ly)) → (ly, 0, -lx), normalised
+  const ax = ly / ang;
+  const az = -lx / ang;
+  const c = Math.cos(ang);
+  const sn = Math.sin(ang);
+  const t = 1 - c;
+  // Rodrigues rotation T (axis has no y component)
+  const t00 = t * ax * ax + c, t01 = -sn * az, t02 = t * ax * az;
+  const t10 = sn * az, t11 = c, t12 = -sn * ax;
+  const t20 = t * ax * az, t21 = sn * ax, t22 = t * az * az + c;
+  // yaw Y (column-major columns)
+  const cy = Math.cos(-face);
+  const sy = Math.sin(-face);
+  // M = T * Ry * s ; Ry columns: (cy,0,-sy), (0,1,0), (sy,0,cy)
+  arr[o] = (t00 * cy - t02 * sy) * s;
+  arr[o + 1] = (t10 * cy - t12 * sy) * s;
+  arr[o + 2] = (t20 * cy - t22 * sy) * s;
+  arr[o + 3] = 0;
+  arr[o + 4] = t01 * s;
+  arr[o + 5] = t11 * s;
+  arr[o + 6] = t21 * s;
+  arr[o + 7] = 0;
+  arr[o + 8] = (t00 * sy + t02 * cy) * s;
+  arr[o + 9] = (t10 * sy + t12 * cy) * s;
+  arr[o + 10] = (t20 * sy + t22 * cy) * s;
+  arr[o + 11] = 0;
+  arr[o + 12] = x;
+  arr[o + 13] = h;
+  arr[o + 14] = y;
+  arr[o + 15] = 1;
+}
 
 export function writeMatrix(arr: Float32Array, o: number, x: number, h: number, y: number, face: number, s: number): void {
   // rotation around Y by -face (sim angle → three), uniform scale, translation
@@ -78,10 +119,10 @@ export class InstancedModel {
   begin(): void {
     this.count = 0;
   }
-  push(x: number, h: number, y: number, face: number, scale: number, flash: number, spawn: number, charge: number, seed: number, walk: number, speed: number, state: number, elite: number): void {
+  push(x: number, h: number, y: number, face: number, scale: number, flash: number, spawn: number, charge: number, seed: number, walk: number, speed: number, state: number, elite: number, lx = 0, ly = 0): void {
     if (this.count >= this.capacity) return;
     const i = this.count++;
-    writeMatrix(this.mesh.instanceMatrix.array as Float32Array, i * 16, x, h, y, face, scale);
+    writeMatrixLean(this.mesh.instanceMatrix.array as Float32Array, i * 16, x, h, y, face, scale, lx, ly);
     const f = this.fx.array as Float32Array;
     f[i * 4] = flash;
     f[i * 4 + 1] = spawn;
@@ -137,6 +178,11 @@ export class EntityRenderer {
   private readonly gT = new Float32Array(GHOSTS);
   private readonly gSeed = new Float32Array(GHOSTS);
   private gCursor = 0;
+  private readonly pgX = new Float32Array(PGHOSTS);
+  private readonly pgY = new Float32Array(PGHOSTS);
+  private readonly pgF = new Float32Array(PGHOSTS);
+  private readonly pgT = new Float32Array(PGHOSTS);
+  private pgCursor = 0;
 
   constructor(scene: Scene, lights: LightPool) {
     for (let t = 0; t < ENEMY_TYPE_COUNT; t++) {
@@ -144,7 +190,7 @@ export class EntityRenderer {
       this.enemies.push(m);
       scene.add(m.mesh);
     }
-    this.player = new InstancedModel(modelByKey('player'), lights, 2);
+    this.player = new InstancedModel(modelByKey('player'), lights, 2 + PGHOSTS);
     scene.add(this.player.mesh);
     this.pillars = new InstancedModel(modelByKey('pillar'), lights, 16);
     scene.add(this.pillars.mesh);
@@ -160,6 +206,16 @@ export class EntityRenderer {
     this.shadowMesh.frustumCulled = false;
     this.shadowMesh.renderOrder = 1;
     scene.add(this.shadowMesh);
+  }
+
+  /** dash afterimage of the player model (pixel-dissolves out) */
+  addPlayerGhost(x: number, y: number, face: number): void {
+    const i = this.pgCursor;
+    this.pgCursor = (this.pgCursor + 1) % PGHOSTS;
+    this.pgX[i] = x;
+    this.pgY[i] = y;
+    this.pgF[i] = face;
+    this.pgT[i] = PGHOST_TIME;
   }
 
   addGhost(type: number, x: number, y: number, face: number, seed: number): void {
@@ -203,8 +259,16 @@ export class EntityRenderer {
       let h = 0;
       if (st === AS.Leap) h = Math.sin(Math.min(1, E.stT[k]! / 0.22) * Math.PI) * 0.9;
       const sp = Math.sqrt(E.vx[k]! * E.vx[k]! + E.vy[k]! * E.vy[k]!);
-      const scale = (def.r / (ENEMY_BASE_R[t] ?? def.r)) * (E.affix[k] ? 1.12 : 1);
-      m.push(x, h, y, face, scale, E.flash[k]!, spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / def.speed), st, E.affix[k] ? 1 : 0);
+      // per-individual size variety (swarms read as a population, not clones)
+      const vari = t === ET.Boss ? 1 : t === ET.Swarmer ? 0.82 + E.seed[k]! * 0.4 : 0.93 + E.seed[k]! * 0.14;
+      const scale = (def.r / (ENEMY_BASE_R[t] ?? def.r)) * (E.affix[k] ? 1.12 : 1) * vari;
+      // stagger: tip away from knockback; lean into motion
+      const kx = E.kx[k]!;
+      const ky = E.ky[k]!;
+      const km = Math.sqrt(kx * kx + ky * ky);
+      const kk = Math.min(0.55, km * 0.07) / (km || 1);
+      const lean = t === ET.Boss ? 0 : 0.035;
+      m.push(x, h, y, face, scale, E.flash[k]!, spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / def.speed), st, E.affix[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
       if (spawn > 0.2) this.shadow(x + 0.25, y + 0.2, def.r * 1.4 * scale, 0.6 * spawn);
     }
     // ghosts (death dissolve)
@@ -218,6 +282,7 @@ export class EntityRenderer {
     for (const m of this.enemies) m.end(time);
     this.enemies[ET.Boss]!.material.uniforms['uCorrupt']!.value = corruption;
 
+    for (let g = 0; g < PGHOSTS; g++) if (this.pgT[g]! > 0) this.pgT[g] = this.pgT[g]! - dt;
     // player
     const p = w.player;
     const pl = this.player;
@@ -230,7 +295,18 @@ export class EntityRenderer {
       df = df - Math.PI * 2 * Math.floor((df + Math.PI) / (Math.PI * 2));
       face += df * alpha;
       const blink = p.inv > 0 && Math.floor(time * 30) % 2 === 0 ? 0.6 : 0;
-      pl.push(x, 0.05 + Math.sin(time * 3) * 0.05, y, face, 1, Math.max(p.hurtT * 0.8, blink), 1, p.recoil, 0.3, p.walk, 0, p.dashT > 0 ? 8 : 0, 0);
+      // recoil: body slides back and tips backward; lean into strafing
+      const rc = p.recoil * p.recoil;
+      const bx = x - Math.cos(face) * rc * 0.28;
+      const by = y - Math.sin(face) * rc * 0.28;
+      const lx = -Math.cos(face) * rc * 0.22 + p.vx * 0.012;
+      const ly = -Math.sin(face) * rc * 0.22 + p.vy * 0.012;
+      pl.push(bx, 0.05 + Math.sin(time * 3) * 0.05, by, face, 1, Math.max(p.hurtT * 0.8, blink), 1, p.recoil, 0.3, p.walk, 0, p.dashT > 0 ? 8 : 0, 0, lx, ly);
+      for (let g = 0; g < PGHOSTS; g++) {
+        if (this.pgT[g]! <= 0) continue;
+        const d = 1 - this.pgT[g]! / PGHOST_TIME;
+        pl.push(this.pgX[g]!, 0.05, this.pgY[g]!, this.pgF[g]!, 1, 0.6 * (1 - d), -Math.max(0.05, d * 0.9), 0, 0.3, 0, 0, 8, 0);
+      }
       this.shadow(x + 0.25, y + 0.2, 0.75, 0.7);
     }
     pl.end(time);
@@ -248,4 +324,4 @@ export class EntityRenderer {
 }
 
 /** Models are authored at the sim radius of each type; scale = 1 at default radius. */
-const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6];
+const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6, 0.75, 0.42];

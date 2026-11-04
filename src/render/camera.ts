@@ -14,10 +14,20 @@ export class CameraRig {
   lookAhead = 0.22;
   /** when true, an external controller (lab orbit) owns the camera */
   manual = false;
+  private focusX = 0;
+  private focusY = 0;
+  private focusT = 0;
   private t = 0;
 
   constructor(aspect: number) {
     this.cam = new PerspectiveCamera(this.baseFov, aspect, 1, 200);
+  }
+
+  /** briefly pull the camera toward a point of interest (e.g. the last kill of a wave) */
+  focus(x: number, y: number, seconds: number): void {
+    this.focusX = x;
+    this.focusY = y;
+    this.focusT = seconds;
   }
 
   snap(x: number, y: number): void {
@@ -28,8 +38,14 @@ export class CameraRig {
   update(dt: number, px: number, py: number, ax: number, ay: number, j: Juice): void {
     this.t += dt;
     if (this.manual) return;
-    const tx = px + (ax - px) * this.lookAhead;
-    const ty = py + (ay - py) * this.lookAhead;
+    let tx = px + (ax - px) * this.lookAhead;
+    let ty = py + (ay - py) * this.lookAhead;
+    if (this.focusT > 0) {
+      this.focusT -= dt;
+      const f = Math.min(1, this.focusT * 2) * 0.55;
+      tx += (this.focusX - tx) * f;
+      ty += (this.focusY - ty) * f;
+    }
     const k = 1 - Math.exp(-dt * 7);
     this.fx += (tx - this.fx) * k;
     this.fy += (ty - this.fy) * k;

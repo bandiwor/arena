@@ -8,6 +8,8 @@ import { damageEnemy, spawnBullet } from './entities';
 import { collidePillars, pushOut } from './physics';
 
 const BASE_SPEED = 9.5;
+export const MUZZLE_FWD = 1.3;
+export const MUZZLE_SIDE = 0.2;
 const ACCEL = 85;
 const DASH_TIME = 0.17;
 const DASH_SPEED = 30;
@@ -146,21 +148,28 @@ function fire(w: World): void {
   p.recoil = Math.min(1, p.recoil + wd.recoil);
   p.shotCount++;
   w.stats.shots++;
-  const mx = p.x + dcos(p.face) * 0.9;
-  const my = p.y + dsin(p.face) * 0.9;
-  // recoil push
-  p.vx -= dcos(p.face) * wd.recoil * 4;
-  p.vy -= dsin(p.face) * wd.recoil * 4;
-  w.events.push(Ev.Shoot, mx, my, p.face, wd.id, wd.rarity, Team.Player);
+  // muzzle of the gun model: forward 1.3, offset 0.2 to the gun side
+  const fx = dcos(p.face);
+  const fy = dsin(p.face);
+  const mx = p.x + fx * MUZZLE_FWD - fy * MUZZLE_SIDE;
+  const my = p.y + fy * MUZZLE_FWD + fx * MUZZLE_SIDE;
+  // aim converges on the cursor from the muzzle (not from the body centre)
+  const adx = p.ax - mx;
+  const ady = p.ay - my;
+  const aim = adx * adx + ady * ady > 2.5 ? datan2(ady, adx) : p.face;
+  // recoil push — heavy weapons shove the player back
+  p.vx -= fx * wd.recoil * 6.5;
+  p.vy -= fy * wd.recoil * 6.5;
+  w.events.push(Ev.Shoot, mx, my, aim, wd.id, wd.rarity, Team.Player);
   const dmgBase = wd.dmg * S.dmgMul;
   if (wd.kind === -1) {
-    fireRail(w, mx, my, p.face, dmgBase, wd.rarity, wd.knock);
+    fireRail(w, mx, my, aim, dmgBase, wd.rarity, wd.knock);
     return;
   }
   const count = wd.count + (wd.id === WP.Singularity ? 0 : S.projAdd);
   const spreadTotal = wd.spread + (count > wd.count ? 0.08 * (count - wd.count) : 0);
   for (let k = 0; k < count; k++) {
-    let a = p.face;
+    let a = aim;
     if (count > 1) a += (k / (count - 1) - 0.5) * spreadTotal;
     a += w.rng.sym() * wd.spread * 0.35;
     const spd = wd.speed * S.bulletSpeedMul * (1 + w.rng.sym() * wd.speedJitter);
@@ -183,7 +192,10 @@ function fire(w: World): void {
       wd.knock,
       wd.aoe,
     );
-    if (b >= 0 && crit) w.bullets.crit[b] = 1;
+    if (b >= 0) {
+      if (crit) w.bullets.crit[b] = 1;
+      w.bullets.h0[b] = 0.6;
+    }
   }
 }
 

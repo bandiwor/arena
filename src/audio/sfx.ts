@@ -49,6 +49,10 @@ export const SFX = [
   'crit',
   'mutator',
   'teleport',
+  'shell',
+  'bloat',
+  'dart_dive',
+  'combo',
 ] as const;
 export type SfxId = (typeof SFX)[number];
 export const SFX_INDEX: Record<SfxId, number> = Object.fromEntries(SFX.map((k, i) => [k, i])) as Record<SfxId, number>;
@@ -310,6 +314,29 @@ export function renderSfx(id: SfxId, sr: number, seed: number): Buf {
       b.mix(o(1.6, { wave: 'saw', f0: 110, f1: 55, detune: 30 }).lowpass(300, 3000, 0.7).env(0.3, 1), 0, 0.6);
       b.mix(o(0.3, { wave: 'square', f0: 880, f1: 220 }).crush(4, 6).env(0.001, 1), 0, 0.3);
       return b.echo(0.2, 0.5, 0.5).normalize(0.6);
+    }
+    case 'shell': {
+      // casing tink: two short inharmonic partials + tiny bounce
+      const b = new Buf(sr, 0.35);
+      const f = r.range(3800, 4600);
+      b.mix(o(0.12, { wave: 'sine', f0: f }).env(0.001, 6), 0, 0.5);
+      b.mix(o(0.1, { wave: 'sine', f0: f * 1.47 }).env(0.001, 7), 0, 0.3);
+      b.mix(o(0.08, { wave: 'sine', f0: f * 0.97 }).env(0.001, 7), 0.11, 0.25);
+      return b.normalize(0.3);
+    }
+    case 'bloat': {
+      const b = o(0.95, { wave: 'saw', f0: 70, f1: 160, vibrato: 0.18, vibRate: 11 }).lowpass(300, 1200, 0.7).env(0.4, 0.5, 0.3);
+      b.mix(n(0.95).bandpass(200, 700, 0.8).env(0.6, 0.4), 0, 0.5);
+      return b.drive(2).normalize(0.55);
+    }
+    case 'dart_dive': {
+      const b = o(0.55, { wave: 'square', f0: 900, f1: 2400, pw: 0.3, vibrato: 0.05, vibRate: 60 }).lowpass(5000).env(0.2, 0.6, 0.15);
+      return b.normalize(0.25);
+    }
+    case 'combo': {
+      const b = new Buf(sr, 0.6);
+      [660, 880, 1320].forEach((f, k) => b.mix(o(0.25, { wave: 'square', f0: f, pw: 0.25 }).lowpass(4000).env(0.002, 2), k * 0.045, 0.3));
+      return b.echo(0.08, 0.35, 0.5).normalize(0.45);
     }
     case 'teleport': {
       const b = o(0.4, { wave: 'saw', f0: 2000, f1: 60, detune: 40 }).crush(5, 4).env(0.001, 1.5);

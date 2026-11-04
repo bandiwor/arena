@@ -117,6 +117,8 @@ export class BulletStore {
   readonly knock = new Float32Array(MAX_BULLETS);
   readonly aoe = new Float32Array(MAX_BULLETS);
   readonly crit = new Uint8Array(MAX_BULLETS);
+  /** cosmetic launch height (muzzle), renderer eases toward cruise height */
+  readonly h0 = new Float32Array(MAX_BULLETS);
 }
 
 export class PickupStore {

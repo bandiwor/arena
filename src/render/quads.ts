@@ -33,6 +33,7 @@ export const QK = {
   Needle: 15,
   Lightning: 16,
   Streak: 17,
+  Hitmarker: 18,
 } as const;
 
 /** Orientation modes */
@@ -208,9 +209,15 @@ void main(){
     float d = abs(uv.y - j);
     a = smoothstep(0.25, 0.0, d) * 1.5 + exp(-d * 4.0) * 0.4;
     a *= 1.0 - prog;
-  } else { // streak (dash afterimage / wind)
+  } else if (k < 17.5) { // streak (dash afterimage / wind)
     float d = abs(uv.y);
     a = smoothstep(1.0, 0.0, d) * smoothstep(1.0, -0.6, uv.x) * smoothstep(-1.0, -0.7, uv.x) * (1.0 - prog);
+  } else { // hitmarker: four diagonal ticks that punch outward
+    vec2 au = abs(uv);
+    float diag = abs(au.x - au.y);
+    float r = (au.x + au.y) * 0.7071;
+    float open_ = 0.3 + prog * 0.25;
+    a = smoothstep(0.09, 0.0, diag) * step(open_, r) * step(r, open_ + 0.42) * (1.0 - prog) * 2.2;
   }
   a = clamp(a, 0.0, 4.0);
   vec3 rgb = col * a * (1.0 - occl) + darkCol * occl;

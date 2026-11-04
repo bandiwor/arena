@@ -205,6 +205,8 @@ export class Game {
     const r0 = performance.now();
     this.renderer.render(w, alpha, realDt, fxDt);
     this.hud.update(w, realDt);
+    const fx = this.renderer.fx;
+    this.hud.setCombo(fx.combo, fx.comboT / 2.6, fx.comboTier);
     this.onFrame?.(realDt);
     const r1 = performance.now();
     // end states

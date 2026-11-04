@@ -136,6 +136,7 @@ export function spawnBullet(
   B.knock[i] = knock;
   B.aoe[i] = aoe;
   B.crit[i] = 0;
+  B.h0[i] = 0.8;
   B.count++;
   return i;
 }
@@ -222,6 +223,15 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
   const p = w.player;
   if (p.stats.lifesteal > 0 && p.alive) p.hp = Math.min(p.maxHp, p.hp + p.stats.lifesteal);
   if (w.rng.chance(def.drop * w.diff.dropMul)) spawnPickup(w, 0, x, y, 12);
+  if (t === ET.Bloater) {
+    // ruptures into a ring of slow acid globs
+    const n = 10;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * 6.283185307179586 + E.seed[i]! * 3;
+      const b = spawnBullet(w, Team.Enemy, 7, x, y, a, 6.5 * w.diff.bulletSpeedMul, 9, 0.3, 2.2, 0, 0, 0, 0, 0, 0);
+      if (b >= 0) w.bullets.h0[b] = 0.6;
+    }
+  }
   if (E.affix[i]! & Affix.Volatile) {
     // death nova: ring of slow enemy bullets
     const n = 10;

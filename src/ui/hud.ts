@@ -28,6 +28,11 @@ export class Hud {
   private readonly boss: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly banner: HTMLElement;
+  private readonly comboEl: HTMLElement;
+  private readonly comboNum: HTMLElement;
+  private readonly comboBar: HTMLElement;
+  private lastCombo = -1;
+  private lastTier = 0;
   readonly upgrade: HTMLElement;
   private last = { hp: -1, max: -1, dash: -1, wave: -1, score: -1, mut: -1, slots: -1, boss: -1, offer: -1 };
   private bannerT = 0;
@@ -42,7 +47,7 @@ export class Hud {
         <div class="hp-text"></div>
         <div class="dash">РЫВОК <span><i></i></span></div>
       </div>
-      <div class="hud-tr"><div class="wave"></div><div class="score"></div><div class="mut hidden"></div></div>
+      <div class="hud-tr"><div class="wave"></div><div class="score"></div><div class="combo hidden"><b></b><span>КОМБО</span><i><u></u></i></div><div class="mut hidden"></div></div>
       <div class="boss hidden"><div class="name">МОНОЛИТ</div><div class="bar"><i></i><div class="ticks"></div></div></div>
       <div class="weapons"></div>
       <div class="banner"></div>
@@ -62,6 +67,9 @@ export class Hud {
     this.bossFill = $('.boss .bar > i', root);
     this.banner = $('.banner', root);
     this.upgrade = $('.upgrade', root);
+    this.comboEl = $('.combo', root);
+    this.comboNum = $('.combo b', root);
+    this.comboBar = $('.combo u', root);
   }
 
   show(v: boolean): void {
@@ -189,6 +197,26 @@ export class Hud {
       this.bannerT -= dt;
       if (this.bannerT <= 0) this.banner.innerHTML = '';
     }
+  }
+
+  /** combo is presentation-only (from the FX director) */
+  setCombo(n: number, left01: number, tier: number): void {
+    if (n !== this.lastCombo) {
+      const show = n >= 3;
+      this.comboEl.classList.toggle('hidden', !show);
+      if (show) {
+        this.comboNum.textContent = `×${n}`;
+        this.comboEl.classList.remove('bump');
+        void this.comboEl.offsetWidth; // restart CSS animation
+        this.comboEl.classList.add('bump');
+      }
+      this.lastCombo = n;
+    }
+    if (tier !== this.lastTier) {
+      this.comboEl.dataset['tier'] = String(tier);
+      this.lastTier = tier;
+    }
+    if (n >= 3) this.comboBar.style.transform = `scaleX(${Math.max(0, left01).toFixed(3)})`;
   }
 
   reset(): void {

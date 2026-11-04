@@ -27,7 +27,12 @@ export const ENEMIES: readonly EnemyDef[] = [
   { type: ET.Archer, key: 'archer', name: 'Терновник', hp: 32, r: 0.6, speed: 4.6, accel: 26, mass: 0.9, material: Mat.Plant, contactDmg: 5, score: 30, spawnTime: 1.0, drop: 0.1, height: 1.6 },
   { type: ET.Shielder, key: 'shielder', name: 'Призма', hp: 95, r: 0.85, speed: 3.4, accel: 16, mass: 3, material: Mat.Crystal, contactDmg: 12, score: 45, spawnTime: 1.0, drop: 0.15, height: 1.7 },
   { type: ET.Boss, key: 'boss', name: 'МОНОЛИТ', hp: 5200, r: 2.6, speed: 3.2, accel: 8, mass: 60, material: Mat.Void, contactDmg: 30, score: 2000, spawnTime: 2.5, drop: 0, height: 5 },
+  { type: ET.Bloater, key: 'bloater', name: 'Гнойник', hp: 42, r: 0.75, speed: 2.7, accel: 12, mass: 2, material: Mat.Flesh, contactDmg: 10, score: 20, spawnTime: 0.9, drop: 0.12, height: 1.2 },
+  { type: ET.Dart, key: 'dart', name: 'Жало', hp: 14, r: 0.42, speed: 8.5, accel: 34, mass: 0.5, material: Mat.Machine, contactDmg: 9, score: 15, spawnTime: 0.7, drop: 0.05, height: 1.1 },
 ];
+ENEMIES.forEach((e, i) => {
+  if (e.type !== i) throw new Error('enemy table order mismatch');
+});
 
 export function enemyDef(t: number): EnemyDef {
   const d = ENEMIES[t];

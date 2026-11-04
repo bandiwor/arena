@@ -62,6 +62,17 @@ html, body {
 .wave { font: 700 22px var(--font); letter-spacing: 0.18em; text-shadow: 0 0 12px var(--violet); }
 .wave small { display: block; font: 400 12px var(--mono); color: var(--muted); letter-spacing: 0.1em; }
 .score { font: 700 15px var(--mono); color: var(--amber); text-shadow: 0 0 10px var(--amber); margin-top: 6px; }
+.combo { margin-top: 8px; display: flex; flex-direction: column; align-items: flex-end; color: var(--ink); }
+.combo b { font: 700 30px var(--font); letter-spacing: 0.04em; line-height: 1; text-shadow: 0 0 14px var(--cyan); }
+.combo span { font: 700 10px var(--mono); letter-spacing: 0.35em; color: var(--muted); }
+.combo i { width: 96px; height: 3px; background: rgb(255 255 255 / 0.08); margin-top: 4px; }
+.combo u { display: block; height: 100%; background: var(--cyan); transform-origin: right; }
+.combo.bump b { animation: comboBump 0.18s ease-out; }
+.combo[data-tier='10'] b, .combo[data-tier='10'] u { color: var(--lime); text-shadow: 0 0 16px var(--lime); background-color: var(--lime); }
+.combo[data-tier='25'] b, .combo[data-tier='25'] u { color: var(--amber); text-shadow: 0 0 18px var(--amber); background-color: var(--amber); }
+.combo[data-tier='50'] b, .combo[data-tier='50'] u, .combo[data-tier='100'] b, .combo[data-tier='100'] u { color: var(--magenta); text-shadow: 0 0 22px var(--magenta), 2px 0 var(--cyan); background-color: var(--magenta); }
+.combo b { background-color: transparent !important; }
+@keyframes comboBump { 0% { transform: scale(1.45); } 100% { transform: none; } }
 .mut { margin-top: 10px; display: inline-block; padding: 4px 10px; font: 700 12px var(--mono); letter-spacing: 0.16em; border: 1px solid currentColor; box-shadow: 0 0 14px currentColor inset; }
 
 .weapons { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 8px; }

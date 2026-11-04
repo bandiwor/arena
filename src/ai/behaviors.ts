@@ -2,7 +2,7 @@ import { Ev } from '../core/events';
 import { dcos, dsin, datan2 } from '../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
-import { acquireToken, hurtPlayer, releaseToken, spawnBullet } from '../sim/systems/entities';
+import { acquireToken, hurtPlayer, killEnemy, releaseToken, spawnBullet } from '../sim/systems/entities';
 import { hasLOS } from '../sim/systems/physics';
 import type { World } from '../sim/world';
 import { angleToPlayer, dir, distToPlayer, faceToward, integrate, pathTo } from './steer';
@@ -139,6 +139,12 @@ export function updateEnemies(w: World): void {
       case ET.Boss:
         updateBoss(w, i);
         break;
+      case ET.Bloater:
+        bloater(w, i);
+        break;
+      case ET.Dart:
+        dart(w, i);
+        break;
     }
     contact(w, i);
   }
@@ -250,9 +256,13 @@ function gunner(w: World, i: number): void {
       E.stT[i] = 0;
       E.burst[i] = E.burst[i]! - 1;
       const a = E.face[i]! + w.rng.sym() * 0.09 * aimErr(w);
-      const mx = E.x[i]! + dcos(a) * 0.8;
-      const my = E.y[i]! + dsin(a) * 0.8;
-      spawnBullet(w, Team.Enemy, BK.Bolt, mx, my, a, 22 * w.diff.bulletSpeedMul, 9, 0.22, 2.2, 0, 0, 0, 0, 0, 0);
+      // alternate between the two barrels
+      const side = (E.burst[i]! & 1 ? 1 : -1) * 0.25;
+      const f = E.face[i]!;
+      const mx = E.x[i]! + dcos(f) * 1.05 - dsin(f) * side;
+      const my = E.y[i]! + dsin(f) * 1.05 + dcos(f) * side;
+      const bb = spawnBullet(w, Team.Enemy, BK.Bolt, mx, my, a, 22 * w.diff.bulletSpeedMul, 9, 0.22, 2.2, 0, 0, 0, 0, 0, 0);
+      if (bb >= 0) w.bullets.h0[bb] = 0.85;
       w.events.push(Ev.EnemyShoot, mx, my, a, ET.Gunner, BK.Bolt);
       E.kx[i] = E.kx[i]! - dcos(a) * 1.5;
       E.ky[i] = E.ky[i]! - dsin(a) * 1.5;
@@ -429,7 +439,8 @@ function archer(w: World, i: number): void {
       const a = E.aim[i]!;
       const mx = E.x[i]! + dcos(a) * 0.9;
       const my = E.y[i]! + dsin(a) * 0.9;
-      spawnBullet(w, Team.Enemy, BK.Arrow, mx, my, a, 30 * w.diff.bulletSpeedMul, 20, 0.2, 1.6, 0, 0, 0, 0, 0, 0);
+      const ab = spawnBullet(w, Team.Enemy, BK.Arrow, mx, my, a, 30 * w.diff.bulletSpeedMul, 20, 0.2, 1.6, 0, 0, 0, 0, 0, 0);
+      if (ab >= 0) w.bullets.h0[ab] = 1.3;
       w.events.push(Ev.ArcherRelease, mx, my, a);
       w.events.push(Ev.EnemyShoot, mx, my, a, ET.Archer, BK.Arrow);
       E.kx[i] = E.kx[i]! - dcos(a) * 3;
@@ -519,7 +530,8 @@ function shielder(w: World, i: number): void {
       const n = 5;
       for (let k = 0; k < n; k++) {
         const a = E.face[i]! + (k / (n - 1) - 0.5) * 0.7;
-        spawnBullet(w, Team.Enemy, BK.Shard, E.x[i]! + dcos(a), E.y[i]! + dsin(a), a, 14 * w.diff.bulletSpeedMul, 10, 0.26, 2, 0, 0, 0, 0, 0, 0);
+        const sb = spawnBullet(w, Team.Enemy, BK.Shard, E.x[i]! + dcos(a) * 1.2, E.y[i]! + dsin(a) * 1.2, a, 14 * w.diff.bulletSpeedMul, 10, 0.26, 2, 0, 0, 0, 0, 0, 0);
+        if (sb >= 0) w.bullets.h0[sb] = 1.05;
       }
       w.events.push(Ev.EnemyShoot, E.x[i]!, E.y[i]!, E.face[i]!, ET.Shielder, BK.Shard);
       releaseToken(w, i);
@@ -582,4 +594,91 @@ function clampX(x: number): number {
 }
 function clampY(y: number): number {
   return Math.max(-ARENA_HH + 2, Math.min(ARENA_HH - 2, y));
+}
+
+// ───────────────────────────── Bloater: slow sac of acid; swells next to you and ruptures
+const BLOAT_FUSE = 0.95;
+function bloater(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const d = distToPlayer(w, i);
+  const sp = speedOf(w, i);
+  if (E.st[i] === AS.Windup) {
+    E.charge[i] = Math.min(1, E.stT[i]! / BLOAT_FUSE);
+    integrate(w, i, 0, 0);
+    if (E.stT[i]! >= BLOAT_FUSE) {
+      const x = E.x[i]!;
+      const y = E.y[i]!;
+      const R = 3.2;
+      w.events.push(Ev.Explosion, x, y, R, 1.4, Team.Enemy);
+      const dx = p.x - x;
+      const dy = p.y - y;
+      if (dx * dx + dy * dy < R * R) hurtPlayer(w, 18, x, y);
+      killEnemy(w, i, datan2(dy, dx), 0, 255, 0);
+    }
+    return;
+  }
+  const dv = pathTo(w, i, p.x, p.y, true);
+  const wob = 0.85 + dsin(w.time * 5 + E.seed[i]! * 9) * 0.15;
+  faceToward(w, i, datan2(dv[1]!, dv[0]!), 2.5);
+  integrate(w, i, dv[0]! * sp * wob, dv[1]! * sp * wob);
+  if (d < 3.4 && E.stT[i]! > 0.5) {
+    E.aim[i] = angleToPlayer(w, i);
+    setState(w, i, AS.Windup);
+  }
+}
+
+// ───────────────────────────── Dart: fast drone, circles at range, then a telegraphed sting dive
+function dart(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const d = distToPlayer(w, i);
+  const toP = angleToPlayer(w, i);
+  const sp = speedOf(w, i);
+  switch (E.st[i]) {
+    case AS.Windup: {
+      faceToward(w, i, toP, 9);
+      E.aim[i] = E.face[i]!;
+      E.charge[i] = Math.min(1, E.stT[i]! / 0.5);
+      integrate(w, i, -dcos(toP) * 1.5, -dsin(toP) * 1.5); // pull back before striking
+      if (E.stT[i]! >= 0.5) setState(w, i, AS.Dash);
+      return;
+    }
+    case AS.Dash: {
+      const a = E.aim[i]!;
+      E.vx[i] = dcos(a) * 26;
+      E.vy[i] = dsin(a) * 26;
+      integrate(w, i, E.vx[i]!, E.vy[i]!);
+      if (E.stT[i]! >= 0.32) {
+        E.charge[i] = 0;
+        releaseToken(w, i);
+        E.cd[i] = (2 + E.seed[i]! * 1.5) * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Recover:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 0.45) setState(w, i, AS.Strafe);
+      return;
+    default: {
+      // orbit: tangential + radial correction toward ring of radius 7
+      const s = E.aux2[i]!;
+      const rx = (p.x - E.x[i]!) / (d || 1);
+      const ry = (p.y - E.y[i]!) / (d || 1);
+      const radial = Math.max(-1, Math.min(1, (d - 7) * 0.35));
+      const vx = (-ry * s + rx * radial) * sp;
+      const vy = (rx * s + ry * radial) * sp;
+      faceToward(w, i, datan2(vy, vx), 8);
+      if (d > 14) {
+        const dv = pathTo(w, i, p.x, p.y, true);
+        integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+      } else integrate(w, i, vx, vy);
+      if (E.think[i]! <= 0) {
+        E.think[i] = 0.25;
+        if (d < 11 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y) && acquireToken(w, i)) setState(w, i, AS.Windup);
+        else if (w.rng.chance(0.06)) E.aux2[i] = -E.aux2[i]!;
+      }
+    }
+  }
 }

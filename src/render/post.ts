@@ -29,6 +29,9 @@ const DOWN_FRAG = /* glsl */ `
 uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uThreshold; uniform float uFirst;
 varying vec2 vUv;
 vec3 pre(vec3 c){
+  // a single NaN/Inf pixel would otherwise be smeared over the whole frame by the blur chain
+  if(any(isnan(c)) || any(isinf(c))) return vec3(0.0);
+  c = max(c, vec3(0.0));
   if(uFirst < 0.5) return c;
   float br = max(c.r, max(c.g, c.b));
   float knee = 0.6;
@@ -128,6 +131,7 @@ void main(){
   col.r = texture2D(tScene, uv + off).r;
   col.g = texture2D(tScene, uv).g;
   col.b = texture2D(tScene, uv - off).b;
+  if(any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
   vec3 bl;
   bl.r = texture2D(tBloom, uv + off * 1.5).r;
   bl.g = texture2D(tBloom, uv).g;

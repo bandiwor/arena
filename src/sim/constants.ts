@@ -39,9 +39,11 @@ export const ET = {
   Archer: 3,
   Shielder: 4,
   Boss: 5,
+  Bloater: 6,
+  Dart: 7,
 } as const;
 export type EnemyType = (typeof ET)[keyof typeof ET];
-export const ENEMY_TYPE_COUNT = 6;
+export const ENEMY_TYPE_COUNT = 8;
 
 export const WP = {
   Pulse: 0,

@@ -67,8 +67,8 @@ const player: ModelDef = {
     }
     // gun (recoils)
     const gl = p['gunLen']!;
-    b.add(new BoxGeometry(gl, 0.14, 0.14), { color: dark, part: Part.Recoil, param: 0.25, pos: [0.4 + gl / 2, 0.6, 0.2] });
-    b.add(new BoxGeometry(0.1, 0.1, 0.1), { color: PAL.player, emit: 1, part: Part.Recoil, param: 0.25, pos: [0.42 + gl, 0.6, 0.2] });
+    b.add(new BoxGeometry(gl, 0.14, 0.14), { color: dark, part: Part.Recoil, param: 0.42, pos: [0.4 + gl / 2, 0.6, 0.2] });
+    b.add(new BoxGeometry(0.1, 0.1, 0.1), { color: PAL.player, emit: 1, part: Part.Recoil, param: 0.42, pos: [0.42 + gl, 0.6, 0.2] });
     // thrusters
     b.add(new CylinderGeometry(0.12, 0.08, 0.2, 6), { color: PAL.player, emit: 1, pos: [-0.62, 0.48, 0], rot: [0, 0, Math.PI / 2] });
     return b.build();
@@ -355,9 +355,69 @@ const pillar: ModelDef = {
   },
 };
 
-export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, boss, pillar];
+// ───────────────────────────────────────── bloater (flesh sac)
+const bloater: ModelDef = {
+  key: 'bloater',
+  name: 'Гнойник (плоть, разрыв)',
+  height: 1.3,
+  rim: PAL.enemy,
+  params: { sac: P(0.68, 0.4, 1), pustules: P(7, 0, 14, 1), jitter: P(0.1, 0, 0.3), legs: P(0.45, 0.2, 0.8) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['sac']!;
+    const cy = 0.35 + R;
+    // the whole sac swells with charge (Core part around its centre)
+    b.add(new IcosahedronGeometry(R, 2), { color: 0x9a6a5a, part: Part.Core, param: 0.38, pivot: [0, cy, 0], pos: [0, cy, 0], scale: [1, 0.92, 1], jitter: p['jitter']!, jitterSeed: 11 });
+    b.add(new IcosahedronGeometry(R * 0.55, 1), { color: 0x5a1020, part: Part.Core, param: 0.38, pivot: [0, cy, 0], pos: [R * 0.15, cy - R * 0.62, 0], scale: [1.2, 0.6, 1.1] });
+    const n = p['pustules']!;
+    for (let k = 0; k < n; k++) {
+      const a = k * 2.399;
+      const el = 0.25 + ((k * 0.37) % 1) * 0.9;
+      const px = Math.cos(a) * Math.cos(el) * R;
+      const pz = Math.sin(a) * Math.cos(el) * R;
+      const py = cy + Math.sin(el) * R * 0.92;
+      b.add(new SphereGeometry(0.07 + (k % 3) * 0.025, 6, 4), { color: k % 2 ? PAL.enemy : 0xd8ff5a, emit: 0.9, part: Part.Core, param: 0.6, pos: [px, py, pz], pivot: [0, cy, 0] });
+    }
+    // tiny mouth and eye stalks at the front
+    b.add(new TorusGeometry(0.12, 0.04, 4, 8), { color: 0x2a0408, pos: [R * 0.95, cy - 0.05, 0], rot: [0, Math.PI / 2, 0] });
+    for (const z of [-1, 1]) b.add(new SphereGeometry(0.06, 5, 4), { color: PAL.enemy, emit: 1, pos: [R * 0.85, cy + 0.22, z * 0.16] });
+    const start = b.vertexCount;
+    for (const x of [0.3, -0.3]) b.add(new ConeGeometry(0.06, p['legs']!, 4), { color: 0x3a060c, part: Part.Leg, param: 0.8, pos: [x, 0.2, R * 0.6], rot: [-0.6, 0, 0], pivot: [x, 0.42, R * 0.45] });
+    b.mirrorZ(start);
+    return b.build();
+  },
+};
+
+// ───────────────────────────────────────── dart (machine wasp)
+const dart: ModelDef = {
+  key: 'dart',
+  name: 'Жало (машина, пикирование)',
+  height: 1.2,
+  rim: PAL.enemy,
+  params: { length: P(1.0, 0.6, 1.4), wing: P(0.6, 0.3, 1.2), hover: P(0.9, 0.5, 1.4) },
+  build(p) {
+    const b = new ModelBuilder();
+    const L = p['length']!;
+    const h = p['hover']!;
+    const bob = { part: Part.Bob, param: 0.06 } as const;
+    b.add(new ConeGeometry(0.25, L, 5), { color: 0x4d546e, pos: [0.1, h, 0], rot: [0, 0, -Math.PI / 2], ...bob });
+    b.add(new ConeGeometry(0.06, 0.45, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.6, pos: [0.1 + L * 0.5 + 0.18, h, 0], rot: [0, 0, -Math.PI / 2], pivot: [0.1 + L * 0.5, h, 0] });
+    b.add(new SphereGeometry(0.17, 6, 4), { color: 0x1b1d26, pos: [-L * 0.35, h + 0.02, 0], scale: [1.5, 0.9, 1], ...bob });
+    b.add(new SphereGeometry(0.07, 5, 4), { color: PAL.enemy, emit: 1, pos: [0.05, h + 0.13, 0], ...bob });
+    b.add(new BoxGeometry(0.12, 0.05, 0.14), { color: PAL.hazard, emit: 0.8, pos: [-L * 0.62, h, 0], ...bob });
+    const start = b.vertexCount;
+    // swept blade wings rooted at the body (Petal: fold back as it charges the dive)
+    const span = p['wing']!;
+    b.add(new ConeGeometry(0.16, span, 3), { color: 0x3c4258, part: Part.Petal, param: -0.6, pos: [-0.12, h + 0.06, 0.12 + span * 0.5], rot: [Math.PI / 2, 0.5, 0], scale: [1.6, 1, 0.18], pivot: [-0.05, h, 0.1] });
+    b.add(new BoxGeometry(0.03, 0.025, span * 0.9), { color: PAL.enemy, emit: 0.9, part: Part.Petal, param: -0.6, pos: [-0.2, h + 0.08, 0.12 + span * 0.45], rot: [0, 0.5, 0], pivot: [-0.05, h, 0.1] });
+    b.mirrorZ(start);
+    return b.build();
+  },
+};
+
+export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, bloater, dart, boss, pillar];
 /** enemy type index → model (matches ET order) */
-export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss];
+export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss, bloater, dart];
 
 export function modelByKey(key: string): ModelDef {
   const m = MODELS.find((x) => x.key === key);
