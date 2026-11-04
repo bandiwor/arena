@@ -99,4 +99,25 @@ describe('Act II', () => {
     expect(births).toBeGreaterThan(0);
     expect(s.world.enemies.count).toBeGreaterThan(1);
   });
+
+  it('regression: a parasite never latches onto itself and every Act II wave can be cleared', () => {
+    for (const seed of [1, 2, 3, 5, 6, 7]) {
+      const s = new Scenario(seed, 1, 'campaign', 11).player({ god: true, weapons: ['pulse', 'scatter', 'rail'] });
+      s.upgrade('dmg').upgrade('dmg').upgrade('rate');
+      let selfHost = false;
+      let outside = false;
+      s.input(Inputs.aimbot()).run(60 * 90, (w) => {
+        const E = w.enemies;
+        for (let i = 0; i < E.hi; i++) {
+          if (!E.alive[i]) continue;
+          if (E.type[i] === ET.Parasite && E.st[i] === AS.Attached && (E.tx[i]! | 0) === i) selfHost = true;
+          if (Math.abs(E.x[i]!) > 36.01 || Math.abs(E.y[i]!) > 24.01) outside = true;
+        }
+      });
+      expect(selfHost).toBe(false);
+      expect(outside).toBe(false);
+      // waves 11 and 12 (Act II #2, #3) must not stall
+      expect(s.world.wave.index).toBeGreaterThanOrEqual(12);
+    }
+  });
 });

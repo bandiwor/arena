@@ -56,7 +56,7 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   E.speedMul[i] = affix & Affix.Fast ? 1.4 : 1;
   E.dmgTaken[i] = 0;
   E.burst[i] = 0;
-  E.aux[i] = 0;
+  E.aux[i] = type === ET.Parasite ? -1 : 0; // parasite: no host chosen yet (never 'slot 0')
   E.aux2[i] = w.rng.sign();
   E.util.fill(0, i * 6, i * 6 + 6);
   E.count++;

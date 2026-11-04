@@ -157,6 +157,12 @@ export function updateEnemies(w: World): void {
         break;
     }
     contact(w, i);
+    // safety net: nothing may ever leave the arena (an unreachable enemy would stall the wave)
+    const r = E.r[i]!;
+    if (E.x[i]! < -ARENA_HW + r) E.x[i] = -ARENA_HW + r;
+    else if (E.x[i]! > ARENA_HW - r) E.x[i] = ARENA_HW - r;
+    if (E.y[i]! < -ARENA_HH + r) E.y[i] = -ARENA_HH + r;
+    else if (E.y[i]! > ARENA_HH - r) E.y[i] = ARENA_HH - r;
   }
 }
 
@@ -791,7 +797,7 @@ function wormRetarget(w: World, i: number): void {
 // ───────────────────────────── Parasite: latches onto another creature and feeds it (harder, faster)
 function hostValid(w: World, h: number, gen: number): boolean {
   const E = w.enemies;
-  return h >= 0 && !!E.alive[h] && E.gen[h] === gen && E.st[h] !== AS.Underground && E.st[h] !== AS.Spawning;
+  return h >= 0 && !!E.alive[h] && E.gen[h] === gen && E.type[h] !== ET.Parasite && E.st[h] !== AS.Underground && E.st[h] !== AS.Spawning;
 }
 function parasite(w: World, i: number): void {
   const E = w.enemies;
@@ -802,6 +808,10 @@ function parasite(w: World, i: number): void {
       setState(w, i, AS.Move);
       E.kx[i] = w.rng.sym() * 6;
       E.ky[i] = w.rng.sym() * 6;
+      return;
+    }
+    if (h === i) {
+      setState(w, i, AS.Move);
       return;
     }
     E.buff[h] = 3;
@@ -838,7 +848,7 @@ function parasite(w: World, i: number): void {
     E.aux[i] = best;
   }
   const h = E.aux[i]! | 0;
-  if (h >= 0 && E.alive[h] && E.buff[h] === 0) {
+  if (h >= 0 && h !== i && E.alive[h] && E.buff[h] === 0 && E.type[h] !== ET.Parasite && E.st[h] !== AS.Spawning && E.st[h] !== AS.Underground) {
     const dx = E.x[h]! - E.x[i]!;
     const dy = E.y[h]! - E.y[i]!;
     const d = Math.sqrt(dx * dx + dy * dy);
