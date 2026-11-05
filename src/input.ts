@@ -8,7 +8,6 @@ import type { TouchControls } from './ui/touch';
 const TOUCH_AIM_DIST = 7;
 const ASSIST_CONE = 0.3; // rad (~17°)
 const ASSIST_RANGE = 22;
-const ASSIST_PULL = 0.7;
 
 const ground = new Float32Array(2);
 
@@ -134,7 +133,7 @@ export class InputDevice {
     const p = w.player;
     if (T.aimOwned) {
       let a = Math.atan2(T.aimY, T.aimX);
-      if (T.aimHeld) a = this.assist(w, a);
+      if (T.aimHeld && T.aimAssist > 0) a = this.assist(w, a, T.aimAssist);
       cmd.ax = p.x + Math.cos(a) * TOUCH_AIM_DIST;
       cmd.ay = p.y + Math.sin(a) * TOUCH_AIM_DIST;
     }
@@ -150,7 +149,7 @@ export class InputDevice {
   }
 
   /** soft aim assist: bend the stick angle toward the closest enemy inside a narrow cone */
-  private assist(w: World, a: number): number {
+  private assist(w: World, a: number, pull: number): number {
     const E = w.enemies;
     const p = w.player;
     let best = ASSIST_CONE;
@@ -170,6 +169,6 @@ export class InputDevice {
         bestD = da;
       }
     }
-    return a + bestD * ASSIST_PULL;
+    return a + bestD * pull;
   }
 }

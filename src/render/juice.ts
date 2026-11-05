@@ -22,22 +22,31 @@ export class Juice {
   kickVX = 0;
   kickVY = 0;
   saturate = 0;
-  /** user preference 0..1 */
+  /** user preferences */
   shakeScale = 1;
+  /** full-screen flashes (photosensitivity) 0..1 */
+  flashScale = 1;
+  /** glitch + chromatic aberration 0..1 */
+  distortScale = 1;
+  /** hitstop freeze-frames and slow-mo */
+  freezeOn = true;
 
   addTrauma(v: number): void {
     this.trauma = Math.min(1, this.trauma + v * this.shakeScale);
   }
   stop(seconds: number): void {
+    if (!this.freezeOn) return;
     this.hitstop = Math.max(this.hitstop, seconds);
   }
   slow(scale: number, seconds: number): void {
+    if (!this.freezeOn) return;
     if (scale <= this.slowScale || this.slowT <= 0) {
       this.slowScale = scale;
       this.slowT = Math.max(this.slowT, seconds);
     }
   }
   doFlash(v: number, r = 1, g = 1, b = 1): void {
+    v *= this.flashScale;
     if (v > this.flash) {
       this.flash = v;
       this.flashR = r;
@@ -46,10 +55,10 @@ export class Juice {
     }
   }
   addGlitch(v: number): void {
-    this.glitch = Math.min(1.5, this.glitch + v);
+    this.glitch = Math.min(1.5, this.glitch + v * this.distortScale);
   }
   addChroma(v: number): void {
-    this.chroma = Math.min(2, this.chroma + v);
+    this.chroma = Math.min(2, this.chroma + v * this.distortScale);
   }
   punch(v: number): void {
     this.zoom = Math.max(-1, Math.min(1, this.zoom + v));

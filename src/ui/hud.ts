@@ -73,6 +73,9 @@ export class Hud {
   private last = { hp: -1, max: -1, dash: -1, wave: -1, score: -1, mut: -1, slots: -1, boss: -1, offer: -1 };
   private bannerT = 0;
   onPick: ((n: number) => void) | null = null;
+  showFps = false;
+  private fpsEl: HTMLElement | null = null;
+  private fpsShown = -1;
   /** tapped weapon slot (0-based) */
   onSlot: ((n: number) => void) | null = null;
 
@@ -172,6 +175,25 @@ export class Hud {
     void EV_STRIDE;
   }
 
+  /** optional FPS counter (settings → Игра) */
+  fps(v: number): void {
+    if (!this.showFps) {
+      if (this.fpsEl) this.fpsEl.classList.add('hidden');
+      return;
+    }
+    if (!this.fpsEl) {
+      this.fpsEl = document.createElement('div');
+      this.fpsEl.className = 'fps-counter';
+      this.root.appendChild(this.fpsEl);
+    }
+    this.fpsEl.classList.remove('hidden');
+    const r = Math.round(v);
+    if (r !== this.fpsShown) {
+      this.fpsShown = r;
+      this.fpsEl.textContent = `${r} FPS`;
+    }
+  }
+
   update(w: World, dt: number): void {
     const p = w.player;
     const L = this.last;
@@ -261,9 +283,9 @@ export class Hud {
         for (let k = 0; k < W.offerCount; k++) {
           const u = UPGRADES[W.offer[k]!]!;
           const b = document.createElement('button');
-          b.className = `card up r${u.rarity}`;
-          b.style.setProperty('--cc', hexCss(RARITY_HEX[u.rarity]!));
-          b.innerHTML = `<div class="rar">${RARITY_NAMES[u.rarity]}${u.weapon >= 0 ? ' · оружие' : ''}</div><h3>${u.name}</h3><p>${u.desc}</p><div class="key">[ ${k + 1} ]</div>`;
+          b.className = `k-card up r${u.rarity}`;
+          b.style.setProperty('--ac', hexCss(RARITY_HEX[u.rarity]!));
+          b.innerHTML = `<em>${RARITY_NAMES[u.rarity]}${u.weapon >= 0 ? ' · оружие' : ''}</em><h3>${u.name}</h3><p>${u.desc}</p><footer class="key">[ ${k + 1} ]</footer>`;
           b.onclick = () => this.onPick?.(k + 1);
           ups.appendChild(b);
         }

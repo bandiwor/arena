@@ -12,6 +12,8 @@
  *
  * Only writes plain numbers; InputDevice turns them into the deterministic InputCmd.
  */
+import type { Place, TouchLayout } from './settings';
+
 export class TouchControls {
   readonly root: HTMLElement;
   /** a touch screen is in use (flips back off when a real mouse moves) */
@@ -32,6 +34,14 @@ export class TouchControls {
   dashQ = false;
   nextQ = false;
   onPause: (() => void) | null = null;
+  // ── preferences (settings → Управление)
+  aimAssist = 0.7;
+  dblTapDash = true;
+  fireAt = 0.25;
+  vibration = true;
+  /** layout editor is open: controls are shown and draggable, input is ignored */
+  editing = false;
+  private layout: TouchLayout | null = null;
   onActiveChange: ((on: boolean) => void) | null = null;
 
   private readonly L: Stick;
@@ -72,7 +82,7 @@ export class TouchControls {
       const now = e.timeStamp;
       const dx = e.clientX - this.lastTapX;
       const dy = e.clientY - this.lastTapY;
-      if (now - this.lastTapT < 260 && dx * dx + dy * dy < 90 * 90) {
+      if (this.dblTapDash && now - this.lastTapT < 260 && dx * dx + dy * dy < 90 * 90) {
         this.dash();
         this.lastTapT = -1e9;
       } else {
@@ -80,12 +90,12 @@ export class TouchControls {
         this.lastTapX = e.clientX;
         this.lastTapY = e.clientY;
       }
-      this.L.begin(e, zl);
+      this.L.begin(e, zl, this.fixedAt('ls'));
     });
     zr.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       if (this.R.id !== -1) return;
-      this.R.begin(e, zr);
+      this.R.begin(e, zr, this.fixedAt('rs'));
       this.aimHeld = true;
       this.aimOwned = true;
     });
@@ -163,7 +173,41 @@ export class TouchControls {
   }
 
   private refresh(): void {
-    this.root.classList.toggle('hidden', !(this.shown && this.active));
+    this.root.classList.toggle('hidden', !((this.shown && this.active) || this.editing));
+  }
+
+  /** fixed mode: the stick base sits at its placed position (px) */
+  private fixedAt(k: 'ls' | 'rs'): [number, number] | null {
+    const L = this.layout;
+    if (!L || L.stickMode !== 'fixed') return null;
+    return [L[k].x * innerWidth, L[k].y * innerHeight];
+  }
+
+  /** place every control from the saved layout (viewport fractions → CSS) */
+  setLayout(L: TouchLayout): void {
+    this.layout = L;
+    const put = (el: HTMLElement, p: Place): void => {
+      el.style.left = `${(p.x * 100).toFixed(2)}%`;
+      el.style.top = `${(p.y * 100).toFixed(2)}%`;
+      el.style.setProperty('--s', p.s.toFixed(2));
+    };
+    put(this.dashBtn, L.dash);
+    put(this.swapBtn, L.swap);
+    put(this.root.querySelector<HTMLElement>('.t-pause')!, L.pause);
+    this.L.home = L.ls;
+    this.R.home = L.rs;
+    this.L.fixed = this.R.fixed = L.stickMode === 'fixed';
+    this.L.end();
+    this.R.end();
+    this.root.style.setProperty('--op', L.opacity.toFixed(2));
+  }
+
+  /** layout editor support */
+  setEditing(on: boolean): void {
+    this.editing = on;
+    this.root.classList.toggle('editing', on);
+    if (on) this.release();
+    this.refresh();
   }
 
   /** drop every held stick (pause, menus, lost focus) */
@@ -176,6 +220,7 @@ export class TouchControls {
 
   private dash(): void {
     this.dashQ = true;
+    if (!this.vibration) return;
     try {
       navigator.vibrate?.(12);
     } catch {
@@ -200,7 +245,7 @@ export class TouchControls {
       this.aimX = r.vx / rm;
       this.aimY = r.vy / rm;
     }
-    this.firing = this.aimHeld && rm > 0.25;
+    this.firing = this.aimHeld && rm > this.fireAt;
     r.el.classList.toggle('fire', this.firing);
   }
 
@@ -219,31 +264,37 @@ export class TouchControls {
   }
 }
 
-/** One floating stick: base under the first touch point, knob follows the finger. */
+/** One stick: floating (base under the first touch) or fixed (base at its placed position). */
 class Stick {
   id = -1;
   vx = 0;
   vy = 0;
+  home: Place = { x: 0.15, y: 0.75, s: 1 };
+  fixed = false;
   private ox = 0;
   private oy = 0;
   private readonly knob: HTMLElement;
-  private readonly R = 56;
 
   constructor(readonly el: HTMLElement) {
     this.knob = el.querySelector('b')!;
   }
 
-  begin(e: PointerEvent, zone: HTMLElement): void {
+  private get R(): number {
+    return 56 * this.home.s;
+  }
+
+  begin(e: PointerEvent, zone: HTMLElement, at: [number, number] | null): void {
     this.id = e.pointerId;
     try {
       zone.setPointerCapture(e.pointerId);
     } catch {
       /* capture is optional */
     }
-    // keep the whole base on screen
     const m = this.R + 8;
-    this.ox = Math.max(m, Math.min(innerWidth - m, e.clientX));
-    this.oy = Math.max(m, Math.min(innerHeight - m, e.clientY));
+    const sx = at ? at[0] : e.clientX;
+    const sy = at ? at[1] : e.clientY;
+    this.ox = Math.max(m, Math.min(innerWidth - m, sx));
+    this.oy = Math.max(m, Math.min(innerHeight - m, sy));
     this.el.classList.remove('idle');
     this.el.style.left = `${this.ox}px`;
     this.el.style.top = `${this.oy}px`;
@@ -255,7 +306,7 @@ class Stick {
     let dy = e.clientY - this.oy;
     const d = Math.hypot(dx, dy);
     const R = this.R;
-    if (d > R * 1.35) {
+    if (!this.fixed && d > R * 1.35) {
       // drag the base along so the stick never "runs out"
       const k = (d - R * 1.35) / d;
       this.ox += dx * k;
@@ -278,7 +329,8 @@ class Stick {
     this.vy = 0;
     this.knob.style.transform = '';
     this.el.classList.add('idle');
-    this.el.style.left = '';
-    this.el.style.top = '';
+    this.el.style.left = `${(this.home.x * 100).toFixed(2)}%`;
+    this.el.style.top = `${(this.home.y * 100).toFixed(2)}%`;
+    this.el.style.setProperty('--s', this.home.s.toFixed(2));
   }
 }

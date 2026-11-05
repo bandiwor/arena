@@ -54,18 +54,18 @@ export class Shell {
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        this.pauseGame();
+        if (this.game.prefs.autoPause) this.pauseGame();
         this.game.touch.release();
-        void this.game.audio.ctx?.suspend();
+        if (this.game.prefs.muteHidden) void this.game.audio.ctx?.suspend();
       } else {
         this.game.audio.resume();
         this.updateChip();
       }
     });
     window.addEventListener('pagehide', () => this.pauseGame());
-    // touch devices: losing focus (notification shade, incoming call) pauses too
+    // losing focus (alt-tab, notification shade, incoming call) pauses too
     window.addEventListener('blur', () => {
-      if (this.touch) {
+      if (this.game.prefs.autoPause) {
         this.pauseGame();
         this.game.touch.release();
       }

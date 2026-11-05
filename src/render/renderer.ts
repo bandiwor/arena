@@ -197,7 +197,7 @@ export class GameRenderer {
     const C = this.post.composite.uniforms;
     C['uTime']!.value = this.realTime;
     C['uChroma']!.value = J.chroma;
-    C['uGlitch']!.value = J.glitch + J.glitchBase;
+    C['uGlitch']!.value = (J.glitch + J.glitchBase) * J.distortScale;
     C['uFlash']!.value = J.flash;
     (C['uFlashCol']!.value as number[])[0] = J.flashR;
     (C['uFlashCol']!.value as number[])[1] = J.flashG;

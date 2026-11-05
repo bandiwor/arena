@@ -38,6 +38,9 @@ export class Game {
   readonly input: InputDevice;
   readonly hud: Hud;
   readonly touch: TouchControls;
+  /** app-level preferences the shell reads */
+  readonly prefs = { autoPause: true, muteHidden: true };
+  private touchShown = false;
   readonly recorder = new InputRecorder();
   mode: Mode = 'menu';
   config: RunConfig = { seed: 1, difficulty: 1 };
@@ -95,10 +98,19 @@ export class Game {
     this.mode = m;
     this.hud.show(m === 'play' || m === 'pause' || m === 'replay' || m === 'demo');
     this.input.enabled = m === 'play';
-    this.touch.show(m === 'play');
+    this.syncTouch();
     this.canvas.style.cursor = m === 'play' ? 'none' : 'default';
     this.onModeChange?.(m);
     window.dispatchEvent(new CustomEvent('null-arena:mode', { detail: m }));
+  }
+
+  /** sticks only while actually fighting (hidden on the upgrade pick so cards stay clear) */
+  private syncTouch(): void {
+    const want = this.mode === 'play' && this.world.wave.phase !== WavePhase.Upgrade;
+    if (want !== this.touchShown) {
+      this.touchShown = want;
+      this.touch.show(want);
+    }
   }
 
   /** Menu background: a self-playing sandbox skirmish. */
@@ -246,6 +258,8 @@ export class Game {
     const r0 = performance.now();
     this.renderer.render(w, alpha, realDt, fxDt);
     this.hud.update(w, realDt);
+    this.hud.fps(this.perf.fps);
+    this.syncTouch();
     if (this.touch.active && this.mode === 'play') {
       const p = w.player;
       const cd = 0.85 * p.stats.dashCdMul;

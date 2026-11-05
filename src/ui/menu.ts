@@ -4,41 +4,13 @@ import { WavePhase } from '../sim/world';
 import type { Game } from '../game';
 import type { ReplayData } from '../sim/replay';
 import { BOT_SKILLS } from '../sim/scenario';
+import { button, card, kbd, textField } from './kit';
+import { applySettings, loadSettings, saveSettings } from './settings';
+import { DIFF_COLORS, SettingsScreen } from './settings-screen';
 
 const BOT_COLORS = ['#7f86a8', '#5cff9b', '#2ef2ff', '#ffb02e'];
-
-const DIFF_COLORS = ['#5cff9b', '#2ef2ff', '#ffa126', '#ff2d7a'];
 const LS_REPLAY = 'null-arena:last-replay';
-const LS_SETTINGS = 'null-arena:settings';
 
-interface Settings {
-  volume: number;
-  ambience: number;
-  binaural: boolean;
-  music: number;
-  shake: number;
-  quality: number;
-  difficulty: number;
-}
-
-function loadSettings(): Settings {
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  const d: Settings = { volume: 0.8, music: 0.55, ambience: 0.7, binaural: true, shake: 1, quality: coarse ? 0.75 : 1, difficulty: 1 };
-  try {
-    const s = localStorage.getItem(LS_SETTINGS);
-    if (s) return { ...d, ...(JSON.parse(s) as Partial<Settings>) };
-  } catch {
-    /* storage unavailable */
-  }
-  return d;
-}
-function saveSettings(s: Settings): void {
-  try {
-    localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
-  } catch {
-    /* ignore */
-  }
-}
 function loadReplay(): ReplayData | null {
   try {
     const s = localStorage.getItem(LS_REPLAY);
@@ -58,7 +30,10 @@ export class Menus {
   private readonly botBar: HTMLElement;
   private botKey = 'skilled';
   private botDiff = 1;
-  private readonly settings = loadSettings();
+  readonly settings = loadSettings();
+  readonly settingsScreen: SettingsScreen;
+  /** where the settings screen returns to */
+  private settingsFrom: 'main' | 'pause' = 'main';
   private seed = (Date.now() % 1_000_000) >>> 0;
 
   constructor(
@@ -88,10 +63,27 @@ export class Menus {
       this.buildBotPick();
     });
     this.buildMain();
-    this.pause.innerHTML = `<div class="col"><h1 class="title" style="font-size:64px">ПАУЗА</h1><div class="row" style="margin-top:28px">
-      <button class="btn" data-a="resume">Продолжить</button><button class="btn alt" data-a="restart">Заново</button><button class="btn alt" data-a="menu">В меню</button></div></div>`;
-    this.pause.addEventListener('click', (e) => this.action((e.target as HTMLElement).dataset['a']));
-    this.over.addEventListener('click', (e) => this.action((e.target as HTMLElement).dataset['a']));
+    this.pause.innerHTML = `<div class="col pause-col"><h1 class="title">ПАУЗА</h1><div class="stack">
+      ${button('Продолжить', { variant: 'primary', size: 'lg', action: 'resume', wide: true, icon: '▶' })}
+      ${button('Настройки', { action: 'settings', wide: true, icon: '⚙' })}
+      ${button('Заново', { action: 'restart', wide: true, icon: '↻' })}
+      ${button('В меню', { variant: 'danger', action: 'menu', wide: true, icon: '✕' })}</div></div>`;
+    const act = (e: Event): void => {
+      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset['a'];
+      if (!a) return;
+      this.game.audio.playUi('ui_click');
+      this.action(a);
+    };
+    this.pause.addEventListener('click', act);
+    this.over.addEventListener('click', act);
+    this.settingsScreen = new SettingsScreen(game, root, this.settings);
+    this.settingsScreen.onClose = () => {
+      if (this.settingsFrom === 'pause' && game.mode === 'pause') this.pause.classList.remove('hidden');
+      else if (game.mode === 'menu') {
+        this.buildMain();
+        this.main.classList.remove('hidden');
+      }
+    };
     this.replayBar.innerHTML = `РЕПЛЕЙ <button class="btn" data-s="0.25">¼×</button><button class="btn" data-s="1">1×</button><button class="btn" data-s="2">2×</button><button class="btn" data-s="4">4×</button><button class="btn" data-s="8">8×</button><button class="btn" data-a="menu">✕</button>`;
     this.replayBar.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
@@ -101,9 +93,7 @@ export class Menus {
     root.addEventListener('pointerenter', (e) => {
       if ((e.target as HTMLElement).classList?.contains('btn')) game.audio.playUi('ui_hover', 0.8);
     }, true);
-    game.renderer.juice.shakeScale = this.settings.shake;
-    game.renderer.renderScale = this.settings.quality;
-    game.renderer.resize();
+    applySettings(game, this.settings);
     game.onModeChange = (m) => {
       this.main.classList.toggle('hidden', m !== 'menu');
       this.pause.classList.toggle('hidden', m !== 'pause');
@@ -112,11 +102,13 @@ export class Menus {
       this.botBar.classList.toggle('hidden', !(m === 'demo' && game.bot));
       if (m === 'demo' && game.bot) this.buildBotBar();
       if (m !== 'menu') this.botPick.classList.add('hidden');
+      if (m !== 'menu' && m !== 'pause' && this.settingsScreen.isOpen) this.settingsScreen.close();
       if (m === 'over') this.buildOver();
     };
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
-        if (game.mode === 'play') game.setMode('pause');
+        if (this.settingsScreen.isOpen) this.settingsScreen.close();
+        else if (game.mode === 'play') game.setMode('pause');
         else if (game.mode === 'pause') game.setMode('play');
         else if (game.mode === 'replay' || (game.mode === 'demo' && game.bot)) this.action('menu');
         else if (!this.botPick.classList.contains('hidden')) this.action('botback');
@@ -135,9 +127,8 @@ export class Menus {
   ensureAudio(): void {
     const a = this.game.audio;
     if (!a.ctx) {
-      a.binaural = this.settings.binaural;
       void a.init(7);
-      a.setVolume(this.settings.volume, this.settings.music, this.settings.ambience);
+      applySettings(this.game, this.settings);
     }
     a.resume();
   }
@@ -145,28 +136,24 @@ export class Menus {
   private buildMain(): void {
     const s = this.settings;
     const hasReplay = !!loadReplay();
-    this.main.innerHTML = `<div class="col">
-      <h1 class="title">NULL<span>//</span>ARENA</h1>
-      <div class="sub">АРЕНА · ${WAVES.length} ВОЛН · МОНОЛИТ</div>
-      <div class="diffs">${DIFFICULTIES.map(
-        (d, i) => `<button class="card ${i === s.difficulty ? 'sel' : ''}" data-d="${i}" style="--cc:${DIFF_COLORS[i]}"><h3>${d.name}</h3><p>${d.desc}</p></button>`,
-      ).join('')}</div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" data-a="start">В бой</button>
-        ${hasReplay ? '<button class="btn alt" data-a="replay">Последний реплей</button>' : ''}
-        <button class="btn alt" data-a="botmenu">Смотреть бота</button>
-        <button class="btn alt small" data-a="debug" title="Сцены, лаборатория ассетов, инструменты (F1)">Отладка</button>
-        <label class="field">SEED <input type="text" data-k="seed" value="${this.seed}"></label>
+    this.main.innerHTML = `<div class="mm">
+      <div class="mm-left">
+        <h1 class="title">NULL<span>//</span>ARENA</h1>
+        <div class="sub">3 АКТА · ${WAVES.length} ВОЛН · АРХИВ «ВЕКТОР»</div>
+        <div class="stack">
+          ${button('В бой', { variant: 'primary', size: 'lg', action: 'start', wide: true, icon: '▶', accent: DIFF_COLORS[s.difficulty] })}
+          ${hasReplay ? button('Последний реплей', { action: 'replay', wide: true, icon: '⟲' }) : ''}
+          ${button('Смотреть бота', { action: 'botmenu', wide: true, icon: '◎' })}
+          ${button('Настройки', { action: 'settings', wide: true, icon: '⚙' })}
+          ${button('Отладка', { variant: 'link', size: 'sm', action: 'debug', hint: 'Сцены, лаборатория ассетов, UI-кит, инструменты (F1)' })}
+        </div>
       </div>
-      <div class="row">
-        <label class="field">ЗВУК <input type="range" min="0" max="1" step="0.05" data-k="volume" value="${s.volume}"></label>
-        <label class="field">МУЗЫКА <input type="range" min="0" max="1" step="0.05" data-k="music" value="${s.music}"></label>
-        <label class="field">АТМОСФЕРА <input type="range" min="0" max="1" step="0.05" data-k="ambience" value="${s.ambience}"></label>
-        <button class="btn alt small" data-a="binaural" title="HRTF: точное положение звука в наушниках">${s.binaural ? '3D · НАУШНИКИ' : '3D · КОЛОНКИ'}</button>
-        <label class="field">ТРЯСКА <input type="range" min="0" max="1.5" step="0.05" data-k="shake" value="${s.shake}"></label>
-        <label class="field">КАЧЕСТВО <input type="range" min="0.5" max="1" step="0.25" data-k="quality" value="${s.quality}"></label>
+      <div class="mm-right">
+        <h4 class="mm-h">СЛОЖНОСТЬ</h4>
+        <div class="mm-diffs">${DIFFICULTIES.map((d, i) => card({ title: d.name, body: d.desc, accent: DIFF_COLORS[i]!, selected: i === s.difficulty, data: { d: i }, tag: ['мягко', 'задумано', 'жёстко', 'предел'][i] ?? '' })).join('')}</div>
+        <div class="mm-seed"><span>ИТЕРАЦИЯ (SEED)</span>${textField('seed', String(this.seed))}<small>один seed — один и тот же забег</small></div>
       </div>
-      <div class="help"><span class="kb"><b>WASD</b> движение · <b>ЛКМ</b> огонь · <b>КОЛЕСО / Q E / 1–6</b> оружие · <b>SPACE / SHIFT / ПКМ</b> рывок · <b>ESC</b> пауза</span><span class="tc"><b>ЛЕВЫЙ СТИК</b> движение · <b>ПРАВЫЙ СТИК</b> прицел и огонь · <b>РЫВОК</b> кнопка или двойное касание слева · <b>⇄ / СЛОТЫ</b> оружие · <b>❚❚</b> пауза</span></div>
+      <div class="mm-help help"><span class="kb">${kbd('WASD')} движение · ${kbd('ЛКМ')} огонь · ${kbd('SPACE')} рывок · ${kbd('Q')}${kbd('E')} оружие · ${kbd('ESC')} пауза</span><span class="tc">левый стик — движение · правый — прицел и огонь · РЫВОК — кнопка или двойное касание слева</span></div>
     </div>`;
     this.main.onclick = (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-d],[data-a]');
@@ -178,41 +165,26 @@ export class Menus {
         s.difficulty = parseInt(t.dataset['d'], 10);
         saveSettings(s);
         this.main.querySelectorAll('[data-d]').forEach((c) => c.classList.toggle('sel', c === t));
+        this.main.querySelector<HTMLElement>('[data-a="start"]')?.style.setProperty('--ac', DIFF_COLORS[s.difficulty]!);
         return;
       }
       this.action(t.dataset['a']);
     };
     this.main.oninput = (e) => {
       const t = e.target as HTMLInputElement;
-      const k = t.dataset['k'];
-      if (k === 'seed') {
-        this.seed = parseInt(t.value, 10) >>> 0;
-        return;
-      }
-      if (k === 'volume' || k === 'music' || k === 'ambience' || k === 'shake' || k === 'quality') {
-        s[k] = parseFloat(t.value);
-        saveSettings(s);
-        this.game.audio.setVolume(s.volume, s.music, s.ambience);
-        this.game.renderer.juice.shakeScale = s.shake;
-        if (k === 'quality') {
-          this.game.renderer.renderScale = s.quality;
-          this.game.renderer.resize();
-        }
-      }
+      if (t.dataset['k'] === 'seed') this.seed = parseInt(t.value, 10) >>> 0;
     };
   }
 
   private buildBotPick(): void {
-    const sk = BOT_SKILLS.map(
-      (b, i) => `<button class="card ${b.key === this.botKey ? 'sel' : ''}" data-bot="${b.key}" style="--cc:${BOT_COLORS[i]}"><h3>${b.name}</h3><p>${b.desc}</p></button>`,
-    ).join('');
-    const df = DIFFICULTIES.map((d, i) => `<button class="btn alt small ${i === this.botDiff ? 'on' : ''}" data-bd="${i}" style="${i === this.botDiff ? `color:${DIFF_COLORS[i]};border-color:${DIFF_COLORS[i]}` : ''}">${d.name}</button>`).join('');
+    const sk = BOT_SKILLS.map((b, i) => card({ title: b.name, body: b.desc, accent: BOT_COLORS[i]!, selected: b.key === this.botKey, data: { bot: b.key } })).join('');
+    const df = `<div class="k-seg">${DIFFICULTIES.map((d, i) => `<button data-bd="${i}" class="${i === this.botDiff ? 'on' : ''}" style="--ac:${DIFF_COLORS[i]}">${d.name}</button>`).join('')}</div>`;
     this.botPick.innerHTML = `<div class="col">
       <h1 class="title" style="font-size:56px">БОТ</h1>
       <div class="sub">УРОВЕНЬ МАСТЕРСТВА</div>
       <div class="diffs">${sk}</div>
       <div class="row"><span class="field">СЛОЖНОСТЬ</span>${df}</div>
-      <div class="row" style="margin-top:14px"><button class="btn" data-a="botgo">Смотреть</button><button class="btn alt" data-a="botback">Назад</button></div>
+      <div class="row" style="margin-top:14px">${button('Смотреть', { variant: 'primary', action: 'botgo', icon: '▶' })}${button('Назад', { action: 'botback' })}</div>
       <div class="help">во время просмотра: скорость <b>1–8×</b> · <b>взять управление</b> — продолжить забег самому · <b>ESC</b> — выход</div>
     </div>`;
   }
@@ -240,16 +212,16 @@ export class Menus {
     }
     const t = (w.tick / 60) | 0;
     this.over.innerHTML = `<div class="col">
-      <h1 class="title" style="font-size:72px;${win ? '' : 'text-shadow:0 0 40px #ff2d7a,3px 0 #ff2d7a,-3px 0 #2ef2ff'}">${win ? 'ПОБЕДА' : 'СИГНАЛ ПОТЕРЯН'}</h1>
+      <h1 class="title over-title" style="${win ? '' : 'text-shadow:0 0 40px #ff2d7a,3px 0 #ff2d7a,-3px 0 #2ef2ff'}">${win ? 'ПОБЕДА' : 'СИГНАЛ ПОТЕРЯН'}</h1>
       <div class="sub">${bot ? `БОТ «${bot.name}» · ${DIFFICULTIES[this.game.config.difficulty]!.name} · ${win ? 'ПОЛНАЯ ПОБЕДА' : `ПАЛ НА ВОЛНЕ ${w.wave.index + 1}`}` : isReplay ? 'КОНЕЦ РЕПЛЕЯ' : win ? (w.act === 2 ? 'СБОРЩИК ОСТАНОВЛЕН · сборка 9.3 отклонена' : 'МОНОЛИТ РАЗРУШЕН') : `ВОЛНА ${w.wave.index + 1}`}</div>
       <div class="stats">
         <div>ОЧКИ<b>${w.stats.score}</b></div><div>УБИЙСТВ<b>${w.stats.kills}</b></div>
         <div>ВРЕМЯ<b>${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}</b></div><div>УРОН<b>${Math.round(w.stats.dmgDealt)}</b></div>
       </div>
-      <div class="row" style="margin-top:28px">
-        ${bot ? '<button class="btn" data-a="botagain">Ещё забег бота</button><button class="btn alt" data-a="botmenu">Другой бот</button>' : '<button class="btn" data-a="restart">Ещё раз</button>'}
-        ${this.game.lastReplay && !bot ? '<button class="btn alt" data-a="watch">Смотреть реплей</button><button class="btn alt" data-a="download">Скачать реплей</button>' : ''}
-        <button class="btn alt" data-a="menu">В меню</button>
+      <div class="row" style="margin-top:22px">
+        ${bot ? button('Ещё забег бота', { variant: 'primary', action: 'botagain', icon: '↻' }) + button('Другой бот', { action: 'botmenu' }) : button('Ещё раз', { variant: 'primary', action: 'restart', icon: '↻' })}
+        ${this.game.lastReplay && !bot ? button('Смотреть реплей', { action: 'watch', icon: '⟲' }) + button('Скачать реплей', { action: 'download', icon: '⤓' }) : ''}
+        ${button('В меню', { action: 'menu' })}
       </div></div>`;
   }
 
@@ -310,14 +282,12 @@ export class Menus {
       case 'debug':
         this.onDebug?.();
         break;
-      case 'binaural': {
-        this.settings.binaural = !this.settings.binaural;
-        saveSettings(this.settings);
-        this.game.audio.setBinaural(this.settings.binaural);
-        const b = this.main.querySelector('[data-a="binaural"]');
-        if (b) b.textContent = this.settings.binaural ? '3D · НАУШНИКИ' : '3D · КОЛОНКИ';
+      case 'settings':
+        this.settingsFrom = g.mode === 'pause' ? 'pause' : 'main';
+        this.main.classList.add('hidden');
+        this.pause.classList.add('hidden');
+        this.settingsScreen.open();
         break;
-      }
       case 'menu':
         this.seed = (Date.now() % 1_000_000) >>> 0;
         this.buildMain();

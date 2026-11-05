@@ -1,4 +1,5 @@
 import './ui/style.css';
+import './ui/kit.css';
 import { Game } from './game';
 import { Menus } from './ui/menu';
 import { installPwa } from './pwa';

@@ -88,6 +88,12 @@ export class AudioEngine {
   musicVolume = 0.55;
   ambVolume = 0.7;
   binaural = true;
+  /** user mix: per-category volume multipliers (0..1.5) */
+  readonly catVol: Record<Cat, number> = { weapon: 1, impact: 1, enemy: 1, world: 1, ui: 1 };
+  /** night mode: heavier compression, quieter peaks (headphones late at night / phone speaker) */
+  night = false;
+  /** heartbeat, tinnitus and hurt muffling on low HP */
+  lowHpFx = true;
   /** global playback-rate factor for new one-shots (slow-mo pitch drop) */
   rateScale = 1;
   private initP: Promise<void> | null = null;
@@ -142,7 +148,7 @@ export class AudioEngine {
     this.sfxBus.connect(this.pre);
     for (const c of CATS) {
       const g = ctx.createGain();
-      g.gain.value = CAT[c].gain;
+      g.gain.value = CAT[c].gain * this.catVol[c];
       if (c === 'ui') g.connect(this.glue);
       else {
         g.connect(this.sfxBus);
@@ -197,6 +203,7 @@ export class AudioEngine {
       ),
     );
     this.ready = true;
+    if (this.night) this.setNight(true);
     this.bootMs.sfx = performance.now() - tb;
     this.buildLoops();
     tb = performance.now();
@@ -315,6 +322,20 @@ export class AudioEngine {
     glide(this.ambBus.gain, amb, now, 0.05);
   }
 
+  setCategory(c: Cat, v: number): void {
+    this.catVol[c] = v;
+    const g = this.catBus.get(c);
+    if (g && this.ctx) glide(g.gain, CAT[c].gain * v, this.ctx.currentTime, 0.05);
+  }
+
+  setNight(on: boolean): void {
+    this.night = on;
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    glide(this.glue.threshold, on ? -34 : -18, now, 0.1);
+    glide(this.glue.ratio, on ? 6 : 2.5, now, 0.1);
+  }
+
   setBinaural(on: boolean): void {
     this.binaural = on;
     for (const l of this.loops) l.pan.panningModel = on ? 'HRTF' : 'equalpower';
@@ -352,6 +373,7 @@ export class AudioEngine {
   }
   setHeart(gain: number, rate: number): void {
     if (!this.heart) return;
+    if (!this.lowHpFx) gain = 0;
     glide(this.heart.gain.gain, gain, this.now, 0.4);
     glide(this.heart.src.playbackRate, rate, this.now, 0.4);
   }
@@ -368,7 +390,7 @@ export class AudioEngine {
 
   /** being hit: brief muffle (filter dip) that eases back — and ears ring on heavy hits */
   hurt(severity: number): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.lowHpFx) return;
     const now = this.ctx.currentTime;
     const f = Math.max(450, 2400 - severity * 1800);
     glide(this.hurtLP.frequency, f, now, 0.012);
