@@ -36,6 +36,7 @@ export const Ev = {
   WormBurrow: 34, // x y
   WormEmerge: 35, // x y radius
   Birth: 36, // x y count
+  ShieldBreak: 37, // x y face
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

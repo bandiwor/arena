@@ -62,6 +62,10 @@ export function updateWaves(w: World, cmd: InputCmd): void {
       if (allDone && w.enemies.count === 0) {
         W.phase = WavePhase.Clear;
         W.t = 0;
+        const p = w.player;
+        // a bigger restoration right before a boss: arrive at the climax ready to fight
+        const beforeBoss = WAVES[W.index + 1]?.boss ? 2.5 : 1;
+        if (p.alive) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * w.diff.waveHeal * beforeBoss);
         w.events.push(Ev.WaveClear, W.index + 1);
       }
       return;
@@ -263,7 +267,8 @@ export function updateDirector(w: World): void {
   D.tension = Math.min(1, alive / 24 + D.dmgRecent / 45 + (1 - hpR) * 0.4);
   // performance in [-1, 1]: healthy & untouched → positive (slightly harder)
   const perf = (hpR - 0.55) * 1.6 - D.dmgRecent / 30;
-  const target = Math.max(-0.12, Math.min(0.12, perf * 0.12));
+  // asymmetric: a struggling player gets noticeably more relief than a dominant one gets pressure
+  const target = Math.max(-0.2, Math.min(0.08, perf * (perf < 0 ? 0.2 : 0.08)));
   const rate = 0.015 * DT; // very slow: max swing in ~8s
   D.adapt += Math.max(-rate, Math.min(rate, target - D.adapt));
 }

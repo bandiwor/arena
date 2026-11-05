@@ -289,7 +289,7 @@ export class EntityRenderer {
       const km = Math.sqrt(kx * kx + ky * ky);
       const kk = Math.min(0.55, km * 0.07) / (km || 1);
       const lean = t === ET.Boss ? 0 : 0.035;
-      m.push(x, h, y, face, scale, E.flash[k]! * (def.r >= 1.5 ? 0.3 : 1), spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / Math.max(0.1, def.speed)), st, E.affix[k] || E.buff[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
+      m.push(x, h, y, face, scale, E.flash[k]! * (def.r >= 1.5 ? 0.3 : 1), spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / Math.max(0.1, def.speed)), t === ET.Shielder && E.shield[k]! <= 0 ? 20 : st, E.affix[k] || E.buff[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
       if (spawn > 0.2) this.shadow(x + 0.25, y + 0.2, def.r * 1.4 * scale, 0.6 * spawn);
     }
     // ghosts (death dissolve)

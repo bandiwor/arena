@@ -82,6 +82,8 @@ export class EnemyStore {
   readonly aux2 = new Float32Array(MAX_ENEMIES);
   /** >0 while a parasite feeds this enemy (decays each tick) */
   readonly buff = new Uint8Array(MAX_ENEMIES);
+  /** Призма shield: >0 durability left; <0 = broken, counts up to 0 (seconds until it reforms) */
+  readonly shield = new Float32Array(MAX_ENEMIES);
   /** last utility scores, 6 per enemy (debug + inspector) */
   readonly util = new Float32Array(MAX_ENEMIES * 6);
   /** packed list of alive ids, rebuilt by rebuildActive() */
@@ -342,6 +344,8 @@ export interface Stats {
   score: number;
   ticks: number;
   upgrades: number;
+  /** damage taken per source (balance diagnostics) */
+  dmgBy: Float32Array;
 }
 
 export interface FlowField {
@@ -482,7 +486,7 @@ export class World {
       dying: 0,
       corruption: 0,
     };
-    this.stats = { kills: 0, dmgDealt: 0, dmgTaken: 0, shots: 0, score: 0, ticks: 0, upgrades: 0 };
+    this.stats = { kills: 0, dmgDealt: 0, dmgTaken: 0, shots: 0, score: 0, ticks: 0, upgrades: 0, dmgBy: new Float32Array(48) };
     const cell = 1;
     const cols = Math.ceil(ARENA_W / cell);
     const rows = Math.ceil(ARENA_H / cell);

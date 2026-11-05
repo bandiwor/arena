@@ -59,23 +59,35 @@ describe('gameplay', () => {
     expect(s.world.enemies.count).toBe(0);
     expect(s.world.stats.kills).toBe(1);
   });
-  it('shielder blocks frontal fire but dies from behind', () => {
+  it('shielder: front shield absorbs fire, cracks under focus, then the body takes damage', () => {
     const front = new Scenario(1).player({ x: 0, y: 0 }).noAI().spawn('shielder', 0, -8);
     front.world.enemies.face[0] = Math.PI / 2; // facing the player (+y)
-    front.input((_w, _t, c) => {
-      c.ax = 0;
-      c.ay = -8;
-      c.btn = Btn.Fire;
-    }).run(120);
-    expect(front.world.enemies.count).toBe(1);
+    const hp0 = front.world.enemies.hp[0]!;
+    let broke = false;
+    front
+      .input((_w, _t, c) => {
+        c.ax = 0;
+        c.ay = -8;
+        c.btn = Btn.Fire;
+      })
+      .run(30, (w) => {
+        for (let k = 0; k < w.events.count; k++) if (w.events.data[k * EV_STRIDE] === Ev.ShieldBreak) broke = true;
+      });
+    // half a second of pulse fire: all absorbed by the shield
+    expect(front.world.enemies.hp[0]).toBe(hp0);
+    front.run(240, (w) => {
+      for (let k = 0; k < w.events.count; k++) if (w.events.data[k * EV_STRIDE] === Ev.ShieldBreak) broke = true;
+    });
+    expect(broke).toBe(true);
+    expect(front.world.enemies.count).toBe(0);
     const back = new Scenario(1).player({ x: 0, y: 0 }).noAI().spawn('shielder', 0, -8);
-    back.world.enemies.face[0] = -Math.PI / 2; // facing away
+    back.world.enemies.face[0] = -Math.PI / 2; // facing away: no shield in the way
     back.input((_w, _t, c) => {
       c.ax = 0;
       c.ay = -8;
       c.btn = Btn.Fire;
-    }).run(240);
-    expect(back.world.enemies.count).toBe(0);
+    }).run(30);
+    expect(back.world.enemies.hp[0]!).toBeLessThan(hp0);
   });
   it('archer telegraphs before releasing', () => {
     const s = new Scenario(3).player({ x: 0, y: 0, god: true }).spawn('archer', 0, -14);

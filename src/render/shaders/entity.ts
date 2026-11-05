@@ -62,8 +62,9 @@ void main(){
     vec3 q = p - pv;
     q *= 1.0 + charge * prm + sin(t * (8.0 + charge * 20.0)) * 0.06 * (0.3 + charge);
     p = q + pv;
-  } else if(part < 7.5 && part > 6.5){ // shield ripple when hit
+  } else if(part < 7.5 && part > 6.5){ // shield ripple when hit; collapses while shattered
     p += n * sin(p.y * 9.0 - uTime * 30.0) * 0.05 * iFx.x;
+    if(iAnim.z > 19.5) p = pv + (p - pv) * 0.001;
   } else if(part > 7.5 && part < 8.5){ // recoil slide
     p.x -= prm * charge;
   } else if(part > 8.5){ // serpentine wiggle: whole segment shifts sideways, wave runs tail-ward

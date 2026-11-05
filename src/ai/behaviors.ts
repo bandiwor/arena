@@ -2,7 +2,7 @@ import { Ev } from '../core/events';
 import { dcos, dsin, datan2 } from '../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
-import { acquireToken, hurtPlayer, killEnemy, releaseToken, spawnBullet, spawnEnemy } from '../sim/systems/entities';
+import { acquireToken, hurtPlayer, killEnemy, releaseToken, SHIELD_HP, spawnBullet, spawnEnemy } from '../sim/systems/entities';
 import { hasLOS } from '../sim/systems/physics';
 import type { World } from '../sim/world';
 import { angleToPlayer, dir, distToPlayer, faceToward, integrate, pathTo } from './steer';
@@ -38,6 +38,11 @@ function setState(w: World, i: number, st: number): void {
 }
 
 /** Effective cooldown multiplier: difficulty + mild dynamic adapt. */
+/** telegraph / wind-up duration scaled by difficulty (never below what is readable) */
+function tel(w: World, base: number): number {
+  return base * w.diff.teleMul;
+}
+
 function cdMul(w: World): number {
   return w.diff.cdMul * (1 - w.director.adapt * 0.5);
 }
@@ -179,8 +184,8 @@ function contact(w: World, i: number): void {
   const rr = E.r[i]! + p.r * 0.8;
   if (dx * dx + dy * dy < rr * rr) {
     let dmg = enemyDef(E.type[i]!).contactDmg;
-    if (E.st[i] === AS.Dash || E.st[i] === AS.Leap) dmg *= 1.6;
-    hurtPlayer(w, dmg, E.x[i]!, E.y[i]!);
+    if (E.st[i] === AS.Dash || E.st[i] === AS.Leap) dmg *= 1.3;
+    hurtPlayer(w, dmg, E.x[i]!, E.y[i]!, E.type[i]!);
   }
 }
 
@@ -194,7 +199,7 @@ function swarmer(w: World, i: number): void {
   switch (E.st[i]) {
     case AS.Windup: {
       faceToward(w, i, toP, 14);
-      E.charge[i] = E.stT[i]! / 0.3;
+      E.charge[i] = E.stT[i]! / 0.3; // leap wind-up is never shortened (already at reaction limit)
       integrate(w, i, 0, 0);
       if (E.stT[i]! >= 0.3) {
         E.aim[i] = E.face[i]!;
@@ -255,9 +260,9 @@ function gunner(w: World, i: number): void {
   if (st === AS.Windup) {
     const L = leadAim(w, E.x[i]!, E.y[i]!, 22 * w.diff.bulletSpeedMul, 0.8);
     faceToward(w, i, datan2(L[1]! - E.y[i]!, L[0]! - E.x[i]!), 6);
-    E.charge[i] = Math.min(1, E.stT[i]! / 0.45);
+    E.charge[i] = Math.min(1, E.stT[i]! / tel(w, 0.45));
     integrate(w, i, 0, 0);
-    if (E.stT[i]! >= 0.45) {
+    if (E.stT[i]! >= tel(w, 0.45)) {
       E.burst[i] = 3;
       setState(w, i, AS.Attack);
     }
@@ -364,7 +369,7 @@ function charger(w: World, i: number): void {
   const sp = speedOf(w, i);
   switch (E.st[i]) {
     case AS.Windup: {
-      const WIND = 0.8;
+      const WIND = Math.max(0.72, tel(w, 0.8));
       if (E.stT[i]! < WIND * 0.7) {
         const L = leadAim(w, E.x[i]!, E.y[i]!, 24, 0.5);
         faceToward(w, i, datan2(L[1]! - E.y[i]!, L[0]! - E.x[i]!), 5);
@@ -432,7 +437,8 @@ function charger(w: World, i: number): void {
 
 // ───────────────────────────── Archer: roots, blooms, locks aim, releases a fast thorn
 const ARCHER_ACTS = new Int8Array([AS.Move, AS.Retreat, AS.Windup]);
-const ARCHER_AIM = 1.15;
+const ARCHER_AIM_BASE = 1.15;
+const archerAim = (w: World): number => tel(w, ARCHER_AIM_BASE);
 function archer(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
@@ -442,16 +448,16 @@ function archer(w: World, i: number): void {
   const st = E.st[i]!;
   if (st === AS.Windup) {
     // first 75% tracks with lead, then locks — dodgeable by reading the telegraph
-    const lockAt = ARCHER_AIM * 0.75;
+    const lockAt = archerAim(w) * 0.75;
     if (E.stT[i]! < lockAt) {
       const L = leadAim(w, E.x[i]!, E.y[i]!, 30 * w.diff.bulletSpeedMul, 0.6);
       const target = datan2(L[1]! - E.y[i]!, L[0]! - E.x[i]!) + w.rng.sym() * 0.02 * aimErr(w);
       faceToward(w, i, target, 4);
       E.aim[i] = E.face[i]!;
     }
-    E.charge[i] = Math.min(1, E.stT[i]! / ARCHER_AIM);
+    E.charge[i] = Math.min(1, E.stT[i]! / archerAim(w));
     integrate(w, i, 0, 0);
-    if (E.stT[i]! >= ARCHER_AIM) {
+    if (E.stT[i]! >= archerAim(w)) {
       const a = E.aim[i]!;
       const mx = E.x[i]! + dcos(a) * 0.9;
       const my = E.y[i]! + dsin(a) * 0.9;
@@ -538,11 +544,16 @@ function shielder(w: World, i: number): void {
   const toP = angleToPlayer(w, i);
   const sp = speedOf(w, i);
   faceToward(w, i, toP, 1.7);
+  // shattered shield reforms after SHIELD_DOWN seconds
+  if (E.shield[i]! < 0) {
+    E.shield[i] = E.shield[i]! + DT;
+    if (E.shield[i]! >= 0) E.shield[i] = SHIELD_HP * w.diff.hpMul;
+  }
   const st = E.st[i]!;
   if (st === AS.Windup) {
-    E.charge[i] = Math.min(1, E.stT[i]! / 0.65);
+    E.charge[i] = Math.min(1, E.stT[i]! / tel(w, 0.65));
     integrate(w, i, 0, 0);
-    if (E.stT[i]! >= 0.65) {
+    if (E.stT[i]! >= tel(w, 0.65)) {
       const n = 5;
       for (let k = 0; k < n; k++) {
         const a = E.face[i]! + (k / (n - 1) - 0.5) * 0.7;
@@ -613,23 +624,23 @@ function clampY(y: number): number {
 }
 
 // ───────────────────────────── Bloater: slow sac of acid; swells next to you and ruptures
-const BLOAT_FUSE = 0.95;
+const BLOAT_FUSE_BASE = 0.95;
 function bloater(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
   const d = distToPlayer(w, i);
   const sp = speedOf(w, i);
   if (E.st[i] === AS.Windup) {
-    E.charge[i] = Math.min(1, E.stT[i]! / BLOAT_FUSE);
+    E.charge[i] = Math.min(1, E.stT[i]! / tel(w, BLOAT_FUSE_BASE));
     integrate(w, i, 0, 0);
-    if (E.stT[i]! >= BLOAT_FUSE) {
+    if (E.stT[i]! >= tel(w, BLOAT_FUSE_BASE)) {
       const x = E.x[i]!;
       const y = E.y[i]!;
       const R = 3.2;
       w.events.push(Ev.Explosion, x, y, R, 1.4, Team.Enemy);
       const dx = p.x - x;
       const dy = p.y - y;
-      if (dx * dx + dy * dy < R * R) hurtPlayer(w, 18, x, y);
+      if (dx * dx + dy * dy < R * R) hurtPlayer(w, 18, x, y, ET.Bloater);
       killEnemy(w, i, datan2(dy, dx), 0, 255, 0);
     }
     return;
@@ -655,9 +666,9 @@ function dart(w: World, i: number): void {
     case AS.Windup: {
       faceToward(w, i, toP, 9);
       E.aim[i] = E.face[i]!;
-      E.charge[i] = Math.min(1, E.stT[i]! / 0.5);
+      E.charge[i] = Math.min(1, E.stT[i]! / tel(w, 0.5));
       integrate(w, i, -dcos(toP) * 1.5, -dsin(toP) * 1.5); // pull back before striking
-      if (E.stT[i]! >= 0.5) setState(w, i, AS.Dash);
+      if (E.stT[i]! >= tel(w, 0.5)) setState(w, i, AS.Dash);
       return;
     }
     case AS.Dash: {
@@ -740,15 +751,15 @@ function worm(w: World, i: number): void {
     }
     case AS.Windup:
       // telegraph: the floor bulges where it will erupt
-      E.charge[i] = Math.min(1, E.stT[i]! / WORM.warn);
-      if (E.stT[i]! >= WORM.warn) {
+      E.charge[i] = Math.min(1, E.stT[i]! / tel(w, WORM.warn));
+      if (E.stT[i]! >= tel(w, WORM.warn)) {
         E.charge[i] = 0;
         setState(w, i, AS.Emerge);
         E.face[i] = angleToPlayer(w, i);
         w.events.push(Ev.WormEmerge, E.x[i]!, E.y[i]!, WORM.radius);
         const dx = p.x - E.x[i]!;
         const dy = p.y - E.y[i]!;
-        if (p.alive && dx * dx + dy * dy < WORM.radius * WORM.radius) hurtPlayer(w, 16, E.x[i]!, E.y[i]!);
+        if (p.alive && dx * dx + dy * dy < WORM.radius * WORM.radius) hurtPlayer(w, 16, E.x[i]!, E.y[i]!, ET.Worm);
       }
       return;
     case AS.Emerge:
@@ -788,7 +799,7 @@ function wormRetarget(w: World, i: number): void {
   const dx = p.x - E.x[i]!;
   const dy = p.y - E.y[i]!;
   const d = Math.sqrt(dx * dx + dy * dy);
-  const eta = d / WORM.speedUnder + WORM.warn * 0.6;
+  const eta = d / WORM.speedUnder + tel(w, WORM.warn) * 0.6;
   const err = aimErr(w);
   E.tx[i] = Math.max(-ARENA_HW + 1.5, Math.min(ARENA_HW - 1.5, p.x + p.vx * eta * 0.8 + w.rng.sym() * err * 1.2));
   E.ty[i] = Math.max(-ARENA_HH + 1.5, Math.min(ARENA_HH - 1.5, p.y + p.vy * eta * 0.8 + w.rng.sym() * err * 1.2));
@@ -898,7 +909,7 @@ function brood(w: World, i: number): void {
   }
   // acid volley
   if (E.st[i] === AS.Windup) {
-    if (E.stT[i]! >= 0.55) {
+    if (E.stT[i]! >= tel(w, 0.55)) {
       const base = angleToPlayer(w, i);
       const m = rage ? 9 : 7;
       for (let k = 0; k < m; k++) {

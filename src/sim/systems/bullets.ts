@@ -2,7 +2,7 @@ import { Ev } from '../../core/events';
 import { angDiff, datan2 } from '../../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team, WP } from '../constants';
 import type { World } from '../world';
-import { damageEnemy, explode, hurtPlayer, removeBullet } from './entities';
+import { damageEnemy, explode, hurtPlayer, removeBullet, SHIELD_DOWN } from './entities';
 import { enemyDef } from '../content/enemies';
 import { weaponDef } from '../content/weapons';
 
@@ -40,6 +40,14 @@ export function updateBullets(w: World): void {
     if (kind === BK.Grenade) {
       vx *= 0.982;
       vy *= 0.982;
+    } else if (kind === BK.Acid) {
+      // 25% of full speed at birth → full speed after ~0.5 s
+      const age = B.age[i]!;
+      if (age < 0.5) {
+        const k = age < DT ? 0.25 : 1 + 1.5 * DT * 2.2;
+        vx *= k;
+        vy *= k;
+      }
     }
     B.vx[i] = vx;
     B.vy[i] = vy;
@@ -177,7 +185,7 @@ export function collideBullets(w: World): void {
       const rr = PLAYER_HITBOX + br;
       if (segHit(p.x, p.y, x0, y0, x1, y1, rr)) {
         if (p.dashT > 0 || p.inv > 0) continue; // dodge through
-        hurtPlayer(w, B.dmg[i]!, x0, y0);
+        hurtPlayer(w, B.dmg[i]!, x0, y0, 20 + B.kind[i]!);
         w.events.push(Ev.Impact, x1, y1, datan2(B.vy[i]!, B.vx[i]!), B.kind[i]!, Team.Enemy, 0);
         removeBullet(w, i);
       }
@@ -209,6 +217,12 @@ export function collideBullets(w: World): void {
       const hy = y0 + (y1 - y0) * bestT;
       w.events.push(Ev.ShieldBlock, hx, hy, a, best);
       E.flash[best] = Math.max(E.flash[best]!, 0.35);
+      // focused fire cracks the shield: it shatters and stays down for a few seconds
+      E.shield[best] = E.shield[best]! - B.dmg[i]! * (kind === BK.Grenade ? 2 : 1);
+      if (E.shield[best]! <= 0) {
+        E.shield[best] = -SHIELD_DOWN;
+        w.events.push(Ev.ShieldBreak, E.x[best]!, E.y[best]!, E.face[best]!);
+      }
       if (kind === BK.Grenade) {
         detonate(w, i);
       } else {
@@ -234,6 +248,7 @@ export function collideBullets(w: World): void {
 }
 
 export function shieldBlocks(w: World, e: number, bulletAngle: number): boolean {
+  if (w.enemies.shield[e]! <= 0) return false; // shattered
   // bullet must travel against the shielder's facing (hit the front)
   const d = angDiff(w.enemies.face[e]! + Math.PI, bulletAngle);
   return d > -1.05 && d < 1.05;

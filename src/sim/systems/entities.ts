@@ -1,9 +1,12 @@
 import { Ev } from '../../core/events';
 import { dcos, dsin, datan2 } from '../../core/detmath';
-import { AS, Affix, ARENA_HH, ARENA_HW, ET, Team, type EnemyType } from '../constants';
+import { AS, Affix, ARENA_HH, ARENA_HW, BK, ET, Team, type EnemyType } from '../constants';
 import { enemyDef } from '../content/enemies';
 import type { World } from '../world';
 import type { Placement } from '../content/waves';
+
+export const SHIELD_HP = 70;
+export const SHIELD_DOWN = 4;
 
 export interface SpawnOpts {
   affix?: number;
@@ -65,6 +68,7 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   if (type === ET.Boss) w.boss.id = i;
   if (type === ET.Brood) w.miniBoss = i;
   E.buff[i] = 0;
+  E.shield[i] = type === ET.Shielder ? SHIELD_HP * w.diff.hpMul : 0;
   return i;
 }
 
@@ -123,7 +127,9 @@ export function spawnBullet(
   B.weapon[i] = weapon;
   B.rarity[i] = rarity;
   B.pierce[i] = pierce;
-  B.bounce[i] = bounce + w.phys.wallBounce;
+  // mirrors favour the player: your shots ricochet fully, hostile ones at most once and die sooner
+  const enemy = team !== Team.Player;
+  B.bounce[i] = bounce + (enemy ? Math.min(1, w.phys.wallBounce) : w.phys.wallBounce);
   B.lastHit[i] = -1;
   B.x[i] = x;
   B.y[i] = y;
@@ -131,7 +137,7 @@ export function spawnBullet(
   B.py[i] = y;
   B.vx[i] = dcos(angle) * speed * sm;
   B.vy[i] = dsin(angle) * speed * sm;
-  B.life[i] = life * w.phys.bulletLife;
+  B.life[i] = life * (enemy && w.phys.wallBounce > 0 ? Math.min(1.15, w.phys.bulletLife) : w.phys.bulletLife);
   B.age[i] = 0;
   B.dmg[i] = dmg;
   B.r[i] = r;
@@ -232,7 +238,7 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
     const n = 10;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * 6.283185307179586 + E.seed[i]! * 3;
-      const b = spawnBullet(w, Team.Enemy, 7, x, y, a, 6.5 * w.diff.bulletSpeedMul, 9, 0.3, 2.2, 0, 0, 0, 0, 0, 0);
+      const b = spawnBullet(w, Team.Enemy, BK.Acid, x, y, a, 6.5 * w.diff.bulletSpeedMul, 9, 0.3, 2.2, 0, 0, 0, 0, 0, 0);
       if (b >= 0) w.bullets.h0[b] = 0.6;
     }
   }
@@ -241,7 +247,7 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
     const n = 10;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * 6.283185307179586 + E.seed[i]!;
-      spawnBullet(w, Team.Enemy, 7, x, y, a, 7, 10 * w.diff.dmgMul, 0.3, 2.5, 0, 0, 0, 0, 0, 0);
+      spawnBullet(w, Team.Enemy, BK.Acid, x, y, a, 7 * w.diff.bulletSpeedMul, 10, 0.3, 2.5, 0, 0, 0, 0, 0, 0);
     }
     w.events.push(Ev.Explosion, x, y, 2.5, 0.6, Team.Enemy);
   }
@@ -250,14 +256,16 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
   removeEnemy(w, i);
 }
 
-export function hurtPlayer(w: World, dmg: number, fromX: number, fromY: number): void {
+/** damage source ids for stats: enemy type for melee/explosions, 20 + bullet kind for shots, 40 laser, 41 slam */
+export function hurtPlayer(w: World, dmg: number, fromX: number, fromY: number, src = -1): void {
   const p = w.player;
   if (!p.alive || p.inv > 0 || p.dashT > 0 || w.god) return;
-  dmg *= w.diff.dmgMul;
+  dmg = Math.min(dmg * w.diff.dmgMul, p.maxHp * w.diff.maxHit);
   p.hp -= dmg;
-  p.inv = 0.55;
+  p.inv = 0.6;
   p.hurtT = 1;
   w.stats.dmgTaken += dmg;
+  if (src >= 0 && src < w.stats.dmgBy.length) w.stats.dmgBy[src] = w.stats.dmgBy[src]! + dmg;
   w.director.dmgRecent += dmg;
   const a = datan2(p.y - fromY, p.x - fromX);
   p.vx += dcos(a) * 9;

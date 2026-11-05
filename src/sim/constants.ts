@@ -30,6 +30,8 @@ export const BK = {
   BossOrb: 6,
   Shard: 7,
   Needle: 8,
+  /** death-spray acid: starts slow and accelerates, so a point-blank burst is still dodgeable */
+  Acid: 9,
 } as const;
 export type BulletKind = (typeof BK)[keyof typeof BK];
 

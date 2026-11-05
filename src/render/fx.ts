@@ -64,6 +64,7 @@ const C_SOIL = new Float32Array([0.06, 0.02, 0.02]);
 const C_DUST = new Float32Array([0.035, 0.018, 0.02]);
 const K_WHITE = new Float32Array([3, 3, 3]);
 const C_OLD = new Float32Array(3);
+const C_CRYS = new Float32Array([1.2, 1.6, 3.6]);
 const C_RARE = [new Float32Array(3), new Float32Array(3), new Float32Array(3), new Float32Array(3)] as const;
 lin(PAL.player, C_PLAYER);
 lin(PAL.enemy, C_ENEMY);
@@ -724,6 +725,16 @@ export class FxDirector {
         case Ev.LaserFire:
           this.sfx('laser_warn', x, y, 0.8, 1, 0.5);
           break;
+        case Ev.ShieldBreak: {
+          const lc = C_CRYS;
+          this.burst(40, x, 1.2, y, a, 2.2, 5, 14, 6, 1.2, lc, 2.5, 0.22, 1.5, 22, PS.Shard, 0);
+          this.burst(30, x, 1.2, y, 0, TAU, 1, 6, 4, 1.4, K_WHITE, 1, 0.07, 2, 3, PS.Glow, 0);
+          this.timed(QK.Ring, QM.Billboard, x, 1.2, y, 0, 4, 4, lc, 2.5, 0.3);
+          this.d.juice.addTrauma(0.25);
+          this.d.juice.stop(0.04);
+          this.sfx('kill_crystal', x, y, 0.9, 1.3, 0.1);
+          break;
+        }
         case Ev.ShieldBlock: {
           const lc = K16;
           this.burst(8, x, 1, y, a + Math.PI, 1.8, 6, 14, 3, 0.25, lc, 1, 0.08, 4, 10, PS.Spark, 0);
@@ -963,6 +974,10 @@ export class FxDirector {
           break;
         case BK.BossOrb:
           Qb.push(QK.Orb, QM.Billboard, x, 1.1, y, 0, 1.15, 1.15, 2.2, 0.5, 3.2, 0, 0, i);
+          break;
+        case BK.Acid:
+          Qb.push(QK.Orb, QM.Billboard, x, h0 + (0.7 - h0) * ease, y, 0, 0.75, 0.75, 2.6, 1.0, 0.7, 0, 0, i);
+          if ((i + w.tick) % 3 === 0) P.emit(x, 0.6, y, r.sym(), 0.5, r.sym(), 0.35, 0.6, 1.8, 0.2, 0.1, 2, 6, PS.Blood, 0.4);
           break;
         case BK.Shard:
           Qb.push(QK.Shard, QM.Ground, x, h0 + (0.9 - h0) * ease, y, a, 0.75, 0.55, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);

@@ -80,7 +80,7 @@ const defs: Omit<MutatorDef, 'id'>[] = [
   {
     key: 'ricochet',
     name: 'ЗЕРКАЛА',
-    desc: 'Стены отражают все снаряды дважды',
+    desc: 'Стены отражают снаряды: твои — дважды, вражеские — один раз',
     color: 0xe8ffff,
     apply(t) {
       t.wallBounce = 2;

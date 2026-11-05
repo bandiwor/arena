@@ -107,7 +107,7 @@ export function updateBoss(w: World, i: number): void {
     case BP.Ring: {
       // two staggered rings
       if (crossed(pt, 0.15) || crossed(pt, 0.6)) {
-        const n = 14 + phase * 4;
+        const n = 12 + phase * 3;
         const off = crossed(pt, 0.6) ? 3.14159 / n : 0;
         for (let k = 0; k < n; k++) orb(w, x, y, (k / n) * 6.283 + off + B.spin, 8 + phase, true);
         w.events.push(Ev.EnemyShoot, x, y, 0, ET.Boss, BK.BossOrb);
@@ -115,8 +115,8 @@ export function updateBoss(w: World, i: number): void {
       break;
     }
     case BP.Spiral: {
-      if (w.tick % (phase === 3 ? 4 : 5) === 0 && pt > 0) {
-        const arms = phase + 1;
+      if (w.tick % (phase === 3 ? 5 : 6) === 0 && pt > 0) {
+        const arms = phase === 3 ? 3 : 2;
         for (let k = 0; k < arms; k++) {
           const a = B.spin * 2.2 + (k / arms) * 6.283;
           orb(w, x + dcos(a) * 2.4, y + dsin(a) * 2.4, a, 10, false);
@@ -141,12 +141,12 @@ export function updateBoss(w: World, i: number): void {
       if (crossed(pt, 0.05)) {
         B.slamX = p.x + p.vx * 0.4;
         B.slamY = p.y + p.vy * 0.4;
-        w.events.push(Ev.Telegraph, B.slamX, B.slamY, 4.2, 1.0);
+        w.events.push(Ev.Telegraph, B.slamX, B.slamY, 4.2, w.diff.teleMul);
       }
-      if (crossed(pt, 1.05)) {
+      if (crossed(pt, 0.05 + w.diff.teleMul)) {
         const ex = p.x - B.slamX;
         const ey = p.y - B.slamY;
-        if (ex * ex + ey * ey < 4.2 * 4.2) hurtPlayer(w, 28, B.slamX, B.slamY);
+        if (ex * ex + ey * ey < 4.2 * 4.2) hurtPlayer(w, 28, B.slamX, B.slamY, 41);
         w.events.push(Ev.Shockwave, B.slamX, B.slamY, 5);
         w.events.push(Ev.Explosion, B.slamX, B.slamY, 4.2, 2.2, Team.Enemy);
         const n = 10 + phase * 2;
@@ -168,8 +168,8 @@ export function updateBoss(w: World, i: number): void {
           L.angVel[k] = dirn * (0.55 + phase * 0.08);
           L.len[k] = 60;
           L.width[k] = 0.55;
-          L.warm[k] = 1.1;
-          L.warmMax[k] = 1.1;
+          L.warm[k] = 1.1 * w.diff.teleMul;
+          L.warmMax[k] = 1.1 * w.diff.teleMul;
           L.life[k] = 4.4;
           L.dmg[k] = 18;
         }
@@ -212,7 +212,7 @@ export function updateBoss(w: World, i: number): void {
     let next = list[w.rng.int(list.length)]!;
     if (next === B.pattern) next = list[(list.indexOf(next) + 1) % list.length]!;
     B.pattern = next;
-    B.patternT = -(0.55 - phase * 0.1); // breathing room between patterns
+    B.patternT = -(0.85 - phase * 0.1); // breathing room between patterns (read, reposition, punish)
   }
 }
 
@@ -248,6 +248,6 @@ export function updateLasers(w: World): void {
     const x1 = L.x[k]! + dcos(a) * L.len[k]!;
     const y1 = L.y[k]! + dsin(a) * L.len[k]!;
     const r = L.width[k]! + 0.3;
-    if (p.alive && segDist2(p.x, p.y, x0, y0, x1, y1) < r * r) hurtPlayer(w, L.dmg[k]!, L.x[k]!, L.y[k]!);
+    if (p.alive && segDist2(p.x, p.y, x0, y0, x1, y1) < r * r) hurtPlayer(w, L.dmg[k]!, L.x[k]!, L.y[k]!, 40);
   }
 }
