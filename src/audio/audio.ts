@@ -80,6 +80,8 @@ export class AudioEngine {
   private readonly density = new Map<Cat, number>();
   private voices = 0;
   ready = false;
+  /** synthesis progress for the boot screen: finished jobs / total jobs */
+  readonly progress = { done: 0, total: 1 };
   musicReady = false;
   bedsReady = false;
   volume = 0.8;
@@ -174,6 +176,14 @@ export class AudioEngine {
     const pool = new SynthPool();
     let tb = performance.now();
     this.buffers = SFX.map(() => []);
+    let jobs = BEDS.length + STEMS.length;
+    for (const id of SFX) jobs += VARIANTS[id] ?? 1;
+    this.progress.total = jobs;
+    this.progress.done = 0;
+    const tick = <T>(v: T): T => {
+      this.progress.done++;
+      return v;
+    };
     await Promise.all(
       SFX.flatMap((id, i) =>
         Array.from({ length: VARIANTS[id] ?? 1 }, (_, v) =>
@@ -181,6 +191,7 @@ export class AudioEngine {
             const ab = ctx.createBuffer(1, r.l.length, sr);
             ab.copyToChannel(r.l, 0);
             this.buffers[i]![v] = ab;
+            tick(0);
           }),
         ),
       ),
@@ -190,8 +201,8 @@ export class AudioEngine {
     this.buildLoops();
     tb = performance.now();
     // ── ambience beds + music stems requested together (both workers busy)
-    const bedP = BEDS.map((id) => pool.run({ job: 0, kind: 'bed', id, seed }));
-    const stemP = STEMS.map((id) => pool.run({ job: 0, kind: 'stem', id, sr, seed }));
+    const bedP = BEDS.map((id) => pool.run({ job: 0, kind: 'bed', id, seed }).then(tick));
+    const stemP = STEMS.map((id) => pool.run({ job: 0, kind: 'stem', id, sr, seed }).then(tick));
     const beds = await Promise.all(bedP);
     BEDS.forEach((id, k) => {
       const g = ctx.createGain();

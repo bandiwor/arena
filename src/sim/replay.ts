@@ -1,7 +1,8 @@
-import { InputRecorder } from './input';
+import { AXIS, InputRecorder } from './input';
 
 export interface ReplayData {
-  version: 1;
+  /** 1: move stored as -1/0/1; 2: analog move ×127 */
+  version: 1 | 2;
   seed: number;
   difficulty: number;
   startWave: number;
@@ -28,7 +29,7 @@ export function packInputs(r: InputRecorder): string {
   return toB64(bytes);
 }
 
-export function unpackInputs(s: string, ticks: number): InputRecorder {
+export function unpackInputs(s: string, ticks: number, version = 2): InputRecorder {
   const bytes = fromB64(s);
   const n = ticks;
   const r = new InputRecorder(Math.max(n, 1));
@@ -42,6 +43,13 @@ export function unpackInputs(s: string, ticks: number): InputRecorder {
   r.ay.set(new Float32Array(bytes.slice(o, o + n * 4).buffer));
   o += n * 4;
   r.btn.set(new Uint16Array(bytes.slice(o, o + n * 2).buffer));
+  if (version < 2) {
+    // v1 stored the sign of the move axis; scale it to the analog encoding
+    for (let i = 0; i < n; i++) {
+      r.mx[i] = r.mx[i]! * AXIS;
+      r.my[i] = r.my[i]! * AXIS;
+    }
+  }
   r.length = n;
   return r;
 }

@@ -73,6 +73,8 @@ export class Hud {
   private last = { hp: -1, max: -1, dash: -1, wave: -1, score: -1, mut: -1, slots: -1, boss: -1, offer: -1 };
   private bannerT = 0;
   onPick: ((n: number) => void) | null = null;
+  /** tapped weapon slot (0-based) */
+  onSlot: ((n: number) => void) | null = null;
 
   constructor(parent: HTMLElement) {
     const root = document.createElement('div');
@@ -99,6 +101,13 @@ export class Hud {
     this.scoreEl = $('.score', root);
     this.mutEl = $('.mut', root);
     this.weapons = $('.weapons', root);
+    this.weapons.addEventListener('pointerdown', (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-slot]');
+      if (!t) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.onSlot?.(parseInt(t.dataset['slot']!, 10));
+    });
     this.boss = $('.boss', root);
     this.bossFill = $('.boss .bar > i', root);
     this.bossName = $('.boss .name', root);
@@ -222,7 +231,7 @@ export class Hud {
       let h = '';
       for (let i = 0; i < p.slotCount; i++) {
         const wd = weaponDef(p.slots[i]!);
-        h += `<div class="wslot ${i === p.cur ? 'on' : ''}" style="--rc:${hexCss(RARITY_HEX[wd.rarity]!)}"><div class="k">${i + 1} · ${RARITY_NAMES[wd.rarity]}</div><div class="n">${wd.name}</div></div>`;
+        h += `<div class="wslot ${i === p.cur ? 'on' : ''}" data-slot="${i}" style="--rc:${hexCss(RARITY_HEX[wd.rarity]!)}"><div class="k">${i + 1} · ${RARITY_NAMES[wd.rarity]}</div><div class="n">${wd.name}</div></div>`;
       }
       this.weapons.innerHTML = h;
       L.slots = slots;

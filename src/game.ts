@@ -9,6 +9,8 @@ import { packInputs, unpackInputs, type ReplayData } from './sim/replay';
 import { hashWorld, Sim } from './sim/sim';
 import { WavePhase, type World } from './sim/world';
 import { Hud } from './ui/hud';
+import { TouchControls } from './ui/touch';
+import { weaponDef } from './sim/content/weapons';
 import type { BotSkill, InputFn } from './sim/scenario';
 
 export type Mode = 'menu' | 'play' | 'pause' | 'over' | 'replay' | 'demo';
@@ -35,6 +37,7 @@ export class Game {
   private readonly audioInfo = { mode: 'menu', combo: 0, comboTier: 0, timeScale: 1, corruption: 0 };
   readonly input: InputDevice;
   readonly hud: Hud;
+  readonly touch: TouchControls;
   readonly recorder = new InputRecorder();
   mode: Mode = 'menu';
   config: RunConfig = { seed: 1, difficulty: 1 };
@@ -73,6 +76,12 @@ export class Game {
     this.input = new InputDevice(canvas);
     this.hud = new Hud(uiRoot);
     this.hud.onPick = (n) => this.input.queuePick(n);
+    this.hud.onSlot = (n) => this.input.queueSlot(n);
+    this.touch = new TouchControls(uiRoot);
+    this.input.touch = this.touch;
+    this.touch.onPause = () => {
+      if (this.mode === 'play') this.setMode('pause');
+    };
     this.renderer.fx.onEvent = (t, d, o) => this.hud.onEvent(t, d, o);
     window.addEventListener('resize', () => this.renderer.resize());
     this.renderer.camera.snap(0, 0);
@@ -86,6 +95,7 @@ export class Game {
     this.mode = m;
     this.hud.show(m === 'play' || m === 'pause' || m === 'replay' || m === 'demo');
     this.input.enabled = m === 'play';
+    this.touch.show(m === 'play');
     this.canvas.style.cursor = m === 'play' ? 'none' : 'default';
     this.onModeChange?.(m);
     window.dispatchEvent(new CustomEvent('null-arena:mode', { detail: m }));
@@ -137,7 +147,7 @@ export class Game {
   playReplay(data: ReplayData): void {
     this.config = { seed: data.seed, difficulty: data.difficulty, startWave: data.startWave };
     this.sim = new Sim({ seed: data.seed, difficulty: data.difficulty, mode: 'campaign', startWave: data.startWave });
-    this.replay = unpackInputs(data.inputs, data.ticks);
+    this.replay = unpackInputs(data.inputs, data.ticks, data.version ?? 1);
     this.replayTick = 0;
     this.replaySpeed = 1;
     this.acc = 0;
@@ -150,7 +160,7 @@ export class Game {
 
   makeReplay(): ReplayData {
     return {
-      version: 1,
+      version: 2,
       seed: this.config.seed,
       difficulty: this.config.difficulty,
       startWave: this.config.startWave ?? 1,
@@ -183,7 +193,7 @@ export class Game {
       this.attract(w, w.tick, c);
     } else {
       this.input.upgradeMode = w.wave.phase === WavePhase.Upgrade;
-      this.input.sample(c, this.renderer.camera);
+      this.input.sample(c, this.renderer.camera, w);
     }
     this.sim.step(c);
     if (this.mode === 'play') this.recorder.push(c);
@@ -236,6 +246,11 @@ export class Game {
     const r0 = performance.now();
     this.renderer.render(w, alpha, realDt, fxDt);
     this.hud.update(w, realDt);
+    if (this.touch.active && this.mode === 'play') {
+      const p = w.player;
+      const cd = 0.85 * p.stats.dashCdMul;
+      this.touch.update(1 - p.dashCd / cd, weaponDef(p.slots[p.cur]!).name, p.slotCount);
+    }
     const fx = this.renderer.fx;
     this.hud.setCombo(fx.combo, fx.comboT / 2.6, fx.comboTier);
     this.onFrame?.(realDt);

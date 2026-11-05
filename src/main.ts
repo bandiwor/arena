@@ -2,6 +2,7 @@ import './ui/style.css';
 import { Game } from './game';
 import { Menus } from './ui/menu';
 import { installPwa } from './pwa';
+import { Shell } from './ui/shell';
 import { Inputs, Scenario } from './sim/scenario';
 import { Btn } from './sim/constants';
 import type { Sim } from './sim/sim';
@@ -10,7 +11,12 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;
 const game = new Game(canvas, ui);
 const menus = new Menus(game, ui);
+if (__DEV__) (window as unknown as { __game: Game }).__game = game;
 const params = new URLSearchParams(location.search);
+// boot screen: one gesture → audio unlock + synthesis progress (+ fullscreen/landscape on touch devices)
+const shell = new Shell(game, ui, () => menus.ensureAudio());
+const skipBoot = ['scene', 'wave', 'autostart', 'selfplay', 'nosplash'].some((k) => params.has(k));
+void shell.boot(skipBoot);
 
 function attractSim(): Sim {
   const s = new Scenario(Date.now() >>> 0, 1, 'sandbox').player({ god: true, weapons: ['pulse', 'scatter', 'rail'] });

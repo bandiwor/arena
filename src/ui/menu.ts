@@ -22,7 +22,8 @@ interface Settings {
 }
 
 function loadSettings(): Settings {
-  const d: Settings = { volume: 0.8, music: 0.55, ambience: 0.7, binaural: true, shake: 1, quality: 1, difficulty: 1 };
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  const d: Settings = { volume: 0.8, music: 0.55, ambience: 0.7, binaural: true, shake: 1, quality: coarse ? 0.75 : 1, difficulty: 1 };
   try {
     const s = localStorage.getItem(LS_SETTINGS);
     if (s) return { ...d, ...(JSON.parse(s) as Partial<Settings>) };
@@ -131,7 +132,7 @@ export class Menus {
   }
 
   /** boots audio on the first gesture; synthesis continues in the background */
-  private ensureAudio(): void {
+  ensureAudio(): void {
     const a = this.game.audio;
     if (!a.ctx) {
       a.binaural = this.settings.binaural;
@@ -165,7 +166,7 @@ export class Menus {
         <label class="field">ТРЯСКА <input type="range" min="0" max="1.5" step="0.05" data-k="shake" value="${s.shake}"></label>
         <label class="field">КАЧЕСТВО <input type="range" min="0.5" max="1" step="0.25" data-k="quality" value="${s.quality}"></label>
       </div>
-      <div class="help"><b>WASD</b> движение · <b>ЛКМ</b> огонь · <b>КОЛЕСО / Q E / 1–6</b> оружие · <b>SPACE / SHIFT / ПКМ</b> рывок · <b>ESC</b> пауза</div>
+      <div class="help"><span class="kb"><b>WASD</b> движение · <b>ЛКМ</b> огонь · <b>КОЛЕСО / Q E / 1–6</b> оружие · <b>SPACE / SHIFT / ПКМ</b> рывок · <b>ESC</b> пауза</span><span class="tc"><b>ЛЕВЫЙ СТИК</b> движение · <b>ПРАВЫЙ СТИК</b> прицел и огонь · <b>РЫВОК</b> кнопка или двойное касание слева · <b>⇄ / СЛОТЫ</b> оружие · <b>❚❚</b> пауза</span></div>
     </div>`;
     this.main.onclick = (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-d],[data-a]');
