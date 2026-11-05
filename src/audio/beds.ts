@@ -9,7 +9,7 @@ export const BED_SR = 24000;
 export const BED_LEN = 12;
 const FADE = 1.5;
 
-export const BEDS = ['room', 'tension', 'corrupt', 'cryo', 'gravity', 'drift', 'overclock', 'ricochet', 'stasis', 'calm', 'flesh'] as const;
+export const BEDS = ['room', 'tension', 'corrupt', 'cryo', 'gravity', 'drift', 'overclock', 'ricochet', 'stasis', 'calm', 'flesh', 'foundry'] as const;
 export type BedId = (typeof BEDS)[number];
 
 type Gen = (sr: number, dur: number, r: Rng, ch: number) => Buf;
@@ -123,6 +123,30 @@ const gens: Record<BedId, Gen> = {
     // wet movement + drips (panned differently per ear)
     for (let k = 0; k < 20; k++) b.mix(osc(sr, 0.08, { wave: 'sine', f0: r.range(500, 1100), f1: r.range(150, 300) }, r).env(0.002, 2), r.range(0, dur), 0.08);
     b.mix(lfoAmp(noise(sr, dur, r).lowpass(90), 0.1, 0.5, ch), 0, 0.35);
+    return b;
+  },
+  // foundry: 55 Hz mains hum, distant pistons on a 0.5 s grid, chain rattle, steam bursts
+  foundry(sr, dur, r, ch) {
+    const b = new Buf(sr, dur);
+    b.mix(osc(sr, dur, { wave: 'saw', f0: 55 + ch * 0.11, detune: 8 }, r).lowpass(260), 0, 0.16);
+    b.mix(osc(sr, dur, { wave: 'sine', f0: 110.3 - ch * 0.17 }, r), 0, 0.07);
+    // piston percussion: heavy on the bar, lighter offbeats, alternating ears
+    for (let t = 0; t < dur; t += 0.5) {
+      const beat = Math.round(t * 2) % 8;
+      if (beat === 0 || beat === 3 || beat === 6) {
+        const th = osc(sr, 0.35, { wave: 'sine', f0: 70, f1: 34 }, r).env(0.003, 2.2).lowpass(400);
+        b.mix(th, t + (ch ? 0.012 : 0), beat === 0 ? 0.42 : 0.24);
+        b.mix(noise(sr, 0.12, r).bandpass(900, 700, 0.6).env(0.002, 2.5), t + 0.01, beat === 0 ? 0.12 : 0.07);
+      }
+      if (beat === 4 && (ch === 0) === (Math.floor(t / 4) % 2 === 0)) b.mix(noise(sr, 0.7, r).highpass(3000).env(0.02, 1.4), t + 0.1, 0.05); // steam
+    }
+    // conveyor chain rattle (amplitude-modulated grit)
+    b.mix(lfoAmp(noise(sr, dur, r).bandpass(1400, 900, 0.7), 9 + ch * 0.4, 0.8), 0, 0.035);
+    // distant metal resonances
+    for (let k = 0; k < 4; k++) {
+      const t = r.range(0.3, dur - 3);
+      b.mix(osc(sr, 3, { wave: 'sine', f0: r.range(180, 420), fmRatio: 1.41, fmIndex: 0.6, fmDecay: 1.5 }, r).env(0.003, 1.2), t, 0.05);
+    }
     return b;
   },
   // calm: between waves / menus — airy, low pad wash

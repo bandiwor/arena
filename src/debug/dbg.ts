@@ -38,6 +38,20 @@ export const SCENES: Record<string, string> = {
   worms: 'Черви: рытьё, упреждение, прорыв',
   brood: 'Мини-босс МАТКА',
   parasites: 'Паразиты и носители',
+  transition2: 'Переход Акт II → Акт III (переплавка)',
+  act3: 'Акт III «Литейный цех»: смешанный бой',
+  mites: 'Шестерёнки-клещи на лентах',
+  stampers: 'Штамповщики: метки ударов',
+  drones: 'Дуговые дроны + охладитель',
+  haulers: 'Зажимщики: крюк и подтяжка',
+  skiffs: 'Пильные скифы: следы',
+  overseer: 'Надзиратель и ленты',
+  press: 'Мини-босс ПРЕСС',
+  assembler: 'Босс акта СБОРЩИК',
+  'mutator:flood': 'Мутатор ЗАТОПЛЕНИЕ',
+  'mutator:reverse': 'Мутатор ОБРАТНЫЙ ПРОТОКОЛ',
+  'mutator:magnetic': 'Мутатор МАГНИТНЫЕ ЗАРЯДЫ',
+  'mutator:lockstep': 'Мутатор СИНХРОНИЗАЦИЯ',
   'mutator:overclock': 'Мутатор РАЗГОН',
   'mutator:cryo': 'Мутатор КРИОПОЛ',
   'mutator:gravity': 'Мутатор ГРАВИКОЛОДЦЫ',
@@ -116,6 +130,38 @@ export function buildScene(name: string, seed: number, difficulty: number): Sim 
       if (name === 'worms') s.spawn('worm', -14, -10).spawn('worm', 14, -10).spawn('worm', 0, 16);
       if (name === 'brood') s.spawn('brood', 0, -14);
       if (name === 'parasites') s.spawn('charger', -6, -12).spawn('gunner', 6, -12).spawn('parasite', -14, 4).spawn('parasite', 14, 4).spawn('parasite', 0, 14);
+      break;
+    }
+    case 'transition2': {
+      s = sc('campaign', 13).player({ god: true, weapons: ['pulse', 'rail'] });
+      const w = s.world;
+      w.wave.phase = WavePhase.Upgrade;
+      w.wave.offerCount = 1;
+      w.wave.offer[0] = 0;
+      s.input((_w, _t, c) => (c.btn |= 1 << Btn.PickShift)).run(1).input(() => {});
+      break;
+    }
+    case 'act3':
+    case 'mites':
+    case 'stampers':
+    case 'drones':
+    case 'haulers':
+    case 'skiffs':
+    case 'overseer':
+    case 'press':
+    case 'assembler': {
+      s = sc().player({ god: true, weapons: ['pulse', 'scatter', 'arcrail'] });
+      s.world.act = 2;
+      buildArenaLayout(s.world);
+      if (name === 'act3') s.spawn('mite', -18, -3).spawn('mite', -20, -2).spawn('stamper', 12, -14).spawn('arcdrone', -8, 12).spawn('hauler', 16, 10).spawn('skiff', -14, -14).spawn('gunner', 6, -16);
+      if (name === 'mites') for (let k = 0; k < 8; k++) s.spawn('mite', -22 + (k % 4) * 1.4, -3.5 + ((k / 4) | 0) * 1.2);
+      if (name === 'stampers') s.spawn('stamper', -10, -12).spawn('stamper', 10, -12);
+      if (name === 'drones') s.spawn('arcdrone', -8, -10).spawn('arcdrone', 8, -10).spawn('arcdrone', 0, 12);
+      if (name === 'haulers') s.spawn('hauler', -12, -10).spawn('hauler', 12, -10);
+      if (name === 'skiffs') s.spawn('skiff', -16, -14).spawn('skiff', 16, 14);
+      if (name === 'overseer') s.spawn('overseer', 0, -16).spawn('mite', -20, -3).spawn('mite', 20, 3).spawn('mite', 0, -18);
+      if (name === 'press') s.spawn('press', 0, -14);
+      if (name === 'assembler') s.spawn('assembler', 0, -3);
       break;
     }
     default: {

@@ -240,7 +240,7 @@ export class Menus {
     const t = (w.tick / 60) | 0;
     this.over.innerHTML = `<div class="col">
       <h1 class="title" style="font-size:72px;${win ? '' : 'text-shadow:0 0 40px #ff2d7a,3px 0 #ff2d7a,-3px 0 #2ef2ff'}">${win ? 'ПОБЕДА' : 'СИГНАЛ ПОТЕРЯН'}</h1>
-      <div class="sub">${bot ? `БОТ «${bot.name}» · ${DIFFICULTIES[this.game.config.difficulty]!.name} · ${win ? 'ПОЛНАЯ ПОБЕДА' : `ПАЛ НА ВОЛНЕ ${w.wave.index + 1}`}` : isReplay ? 'КОНЕЦ РЕПЛЕЯ' : win ? 'МОНОЛИТ РАЗРУШЕН' : `ВОЛНА ${w.wave.index + 1}`}</div>
+      <div class="sub">${bot ? `БОТ «${bot.name}» · ${DIFFICULTIES[this.game.config.difficulty]!.name} · ${win ? 'ПОЛНАЯ ПОБЕДА' : `ПАЛ НА ВОЛНЕ ${w.wave.index + 1}`}` : isReplay ? 'КОНЕЦ РЕПЛЕЯ' : win ? (w.act === 2 ? 'СБОРЩИК ОСТАНОВЛЕН · сборка 9.3 отклонена' : 'МОНОЛИТ РАЗРУШЕН') : `ВОЛНА ${w.wave.index + 1}`}</div>
       <div class="stats">
         <div>ОЧКИ<b>${w.stats.score}</b></div><div>УБИЙСТВ<b>${w.stats.kills}</b></div>
         <div>ВРЕМЯ<b>${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}</b></div><div>УРОН<b>${Math.round(w.stats.dmgDealt)}</b></div>

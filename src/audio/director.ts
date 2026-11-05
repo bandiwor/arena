@@ -26,6 +26,8 @@ const MUT_BED: Record<string, BedId> = {
   overclock: 'overclock',
   ricochet: 'ricochet',
   stasis: 'stasis',
+  reverse: 'overclock',
+  magnetic: 'ricochet',
 };
 
 /** Emitters that carry a continuous positional loop */
@@ -35,6 +37,10 @@ const HUM: Partial<Record<number, SfxId>> = {
   [ET.Bloater]: 'hum_bloater',
   [ET.Boss]: 'hum_boss',
   [ET.Worm]: 'hum_worm',
+  [ET.ArcDrone]: 'hum_arcdrone',
+  [ET.Skiff]: 'hum_saw',
+  [ET.Assembler]: 'hum_assembler',
+  [ET.Press]: 'hum_boss',
 };
 
 /**
@@ -115,8 +121,10 @@ export class AudioDirector {
     // ── ambience beds
     const fleshAct = w.act === 1;
     const trans = ph === WavePhase.Transition;
-    A.setBed('room', menu ? 0.35 : fleshAct ? 0.12 : 0.5, 3);
+    const foundryAct = w.act === 2;
+    A.setBed('room', menu ? 0.35 : fleshAct || foundryAct ? 0.12 : 0.5, 3);
     A.setBed('flesh', fleshAct ? 0.6 : 0, 3);
+    A.setBed('foundry', foundryAct && !menu ? 0.6 : 0, 3);
     A.setBed('calm', calm ? 0.55 : 0, 2.5);
     A.setBed('tension', calm ? 0 : ss(0.15, 0.85, t) * 0.55, t > 0.3 ? 2 : 3.5);
     A.setBed('corrupt', boss ? Math.min(1, info.corruption * 1.2) * 0.7 : 0, 2);

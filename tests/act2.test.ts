@@ -20,17 +20,24 @@ describe('Act II', () => {
     const pillars0 = s.world.pillars.x[0];
     let sawTransition = false;
     let sawSynth = false;
+    let fleshPools = 0;
+    let fleshPillar = pillars0;
+    let fleshWave = -1;
     s.input(Inputs.aimbot()).run(60 * 150, (w) => {
       if (has(w, Ev.ActTransition)) sawTransition = true;
       if (has(w, Ev.ActSynth)) sawSynth = true;
+      if (w.act === 1 && fleshWave < 0) {
+        fleshPools = w.pools.count;
+        fleshPillar = w.pillars.x[0];
+        fleshWave = w.wave.index;
+      }
     });
     expect(sawTransition).toBe(true);
     expect(sawSynth).toBe(true);
-    const w = s.world;
-    expect(w.act).toBe(1);
-    expect(w.pools.count).toBeGreaterThan(0);
-    expect(w.pillars.x[0]).not.toBe(pillars0);
-    expect(WAVES[w.wave.index]!.act).toBe(1);
+    expect(fleshWave).toBeGreaterThanOrEqual(0);
+    expect(fleshPools).toBeGreaterThan(0);
+    expect(fleshPillar).not.toBe(pillars0);
+    expect(WAVES[fleshWave]!.act).toBe(1);
   });
 
   it('transition lasts TRANS_DUR and heals the player', () => {

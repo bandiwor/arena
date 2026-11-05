@@ -117,6 +117,42 @@ const defs: Omit<MutatorDef, 'id'>[] = [
       t.bulletLife = 1.8;
     },
   },
+  {
+    key: 'flood',
+    name: 'ЗАТОПЛЕНИЕ',
+    desc: 'Каждые 8 с разливается охладитель — он проводит ток',
+    color: 0x9b5cff,
+    apply(t) {
+      t.flood = 1;
+    },
+  },
+  {
+    key: 'reverse',
+    name: 'ОБРАТНЫЙ ПРОТОКОЛ',
+    desc: 'Ленты разворачиваются каждые 6 с',
+    color: 0xffa126,
+    apply(t) {
+      t.lanePeriod = 6;
+    },
+  },
+  {
+    key: 'magnetic',
+    name: 'МАГНИТНЫЕ ЗАРЯДЫ',
+    desc: 'Твои пули доворачивают к машинам в радиусе 6',
+    color: 0x2ef2ff,
+    apply(t) {
+      t.magnetic = 1;
+    },
+  },
+  {
+    key: 'lockstep',
+    name: 'СИНХРОНИЗАЦИЯ',
+    desc: 'Прессы бьют в унисон — окно в 2 с всегда безопасно',
+    color: 0xffa126,
+    apply(t) {
+      t.lockstep = 1;
+    },
+  },
 ];
 
 export const MUTATORS: readonly MutatorDef[] = defs.map((d, i) => ({ ...d, id: i }));

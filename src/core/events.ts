@@ -37,6 +37,19 @@ export const Ev = {
   WormEmerge: 35, // x y radius
   Birth: 36, // x y count
   ShieldBreak: 37, // x y face
+  PadWarn: 38, // x y
+  PadStamp: 39, // x y
+  LaneWarn: 40, // lane index
+  LaneFlip: 41, // lane index
+  PylonCharge: 42, // x y
+  Arc: 43, // x0 y0 x1 y1 hitPlayer
+  MarkHit: 44, // x y r
+  HookFire: 45, // x y angle
+  HookHit: 46, // x y
+  Shorted: 47, // x y
+  ArmDown: 48, // x y
+  HubShield: 49, // x y on
+  Shunt: 50, // lane index
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

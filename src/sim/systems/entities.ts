@@ -1,11 +1,21 @@
 import { Ev } from '../../core/events';
 import { dcos, dsin, datan2 } from '../../core/detmath';
-import { AS, Affix, ARENA_HH, ARENA_HW, BK, ET, Team, type EnemyType } from '../constants';
+import { AS, Affix, ARENA_HH, ARENA_HW, BK, ET, Mat, Team, type EnemyType } from '../constants';
 import { enemyDef } from '../content/enemies';
 import type { World } from '../world';
 import type { Placement } from '../content/waves';
 
 export const SHIELD_HP = 70;
+
+/** vulnerability windows: punish the recovery, reward reading the pattern */
+export function vulnMul(t: number, st: number): number {
+  if (t === ET.GearMite && st === AS.Stunned) return 1.25;
+  if (t === ET.Stamper && st === AS.Recover) return 1.3;
+  if (t === ET.ArcDrone && st === AS.Windup) return 1.4;
+  if (t === ET.Hauler && st === AS.Recover) return 1.3;
+  if (t === ET.Skiff && st === AS.Stunned) return 1.2;
+  return 1;
+}
 export const SHIELD_DOWN = 4;
 
 export interface SpawnOpts {
@@ -66,7 +76,9 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   if (opts?.instant) E.st[i] = AS.Move;
   else w.events.push(Ev.SpawnTelegraph, x, y, type, def.spawnTime, affix);
   if (type === ET.Boss) w.boss.id = i;
-  if (type === ET.Brood) w.miniBoss = i;
+  if (type === ET.Brood || type === ET.Press || type === ET.Assembler) w.miniBoss = i;
+  E.shortT[i] = 0;
+  E.haste[i] = 0;
   E.buff[i] = 0;
   E.shield[i] = type === ET.Shielder ? SHIELD_HP * w.diff.hpMul : 0;
   return i;
@@ -144,6 +156,7 @@ export function spawnBullet(
   B.knock[i] = knock;
   B.aoe[i] = aoe;
   B.crit[i] = 0;
+  B.homing[i] = -1;
   B.h0[i] = 0.8;
   B.count++;
   return i;
@@ -196,6 +209,12 @@ export function damageEnemy(
   const def = enemyDef(t);
   // a feeding parasite hardens its host
   if (E.buff[i]! > 0) dmg *= 0.6;
+  // the assembler hub is untouchable while closed / shielded
+  if (t === ET.Assembler && E.shield[i]! > 0) {
+    w.events.push(Ev.ShieldBlock, E.x[i]!, E.y[i]!, angle, i);
+    return false;
+  }
+  dmg *= vulnMul(t, E.st[i]!);
   if (E.affix[i]! & Affix.Armored) dmg *= 0.75;
   if (t === ET.Boss && w.boss.dying > 0) return false;
   E.hp[i] = E.hp[i]! - dmg;
@@ -233,6 +252,27 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
   const p = w.player;
   if (p.stats.lifesteal > 0 && p.alive) p.hp = Math.min(p.maxHp, p.hp + p.stats.lifesteal);
   if (w.rng.chance(def.drop * w.diff.dropMul)) spawnPickup(w, 0, x, y, 12);
+  if (t === ET.Overseer) for (let k = 0; k < w.lanes.count; k++) w.lanes.frozen[k] = 3; // a deliberate gift
+  if (t === ET.Press) for (let k = 0; k < w.lanes.count; k++) w.lanes.frozen[k] = 5;
+  if (t === ET.Arm) {
+    w.events.push(Ev.ArmDown, x, y);
+    // the hub raises a shield ring for 3 s whenever it loses an arm (phase 2+)
+    for (let k = 0; k < E.hi; k++) {
+      if (!E.alive[k] || E.type[k] !== ET.Assembler) continue;
+      if (E.hp[k]! / E.maxHp[k]! <= 0.7 && E.shield[k]! <= 0) {
+        E.shield[k] = 3;
+        w.events.push(Ev.HubShield, E.x[k]!, E.y[k]!, 1);
+      }
+    }
+  }
+  const P = w.player;
+  if (P.stats.shrapnel > 0 && def.material === Mat.Machine) {
+    const n = 2 * P.stats.shrapnel;
+    for (let k = 0; k < n; k++) {
+      const b = spawnBullet(w, Team.Player, BK.Pellet, x, y, w.rng.range(0, 6.283), 22, 4 * P.stats.dmgMul, 0.12, 0.35, 255, 0, 0, 0, 1, 0);
+      if (b >= 0) w.bullets.h0[b] = 0.5;
+    }
+  }
   if (t === ET.Bloater) {
     // ruptures into a ring of slow acid globs
     const n = 10;
@@ -321,6 +361,19 @@ export function placeSpawn(w: World, place: Placement, idx: number, out: Float32
         const d = r.range(11, 16);
         x = p.x + dcos(a) * d;
         y = p.y + dsin(a) * d;
+        break;
+      }
+      case 'lanes': {
+        // drop onto a conveyor (falls back to the edge outside the Foundry)
+        const L = w.lanes;
+        if (L.count === 0) {
+          x = r.sym() * (ARENA_HW - 3);
+          y = (r.chance(0.5) ? -1 : 1) * (ARENA_HH - 2.5);
+          break;
+        }
+        const k = (idx + r.int(L.count)) % L.count;
+        x = L.cx[k]! + r.sym() * L.hw[k]! * 0.8;
+        y = L.cy[k]! + r.sym() * L.hh[k]! * 0.8;
         break;
       }
       case 'far': {

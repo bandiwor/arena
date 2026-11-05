@@ -219,11 +219,17 @@ uniform float uIce;
 uniform float uCorrupt;
 uniform vec3 uPlayer;
 uniform vec4 uWells[4];
-uniform float uActMix;   // 1 when the current sector is Плоть
+uniform float uAct;      // current sector: 0 Карантин, 1 Плоть, 2 Литейный цех
+uniform float uPrevAct;  // sector shown outside the synthesis front
 uniform float uSynthR;   // synthesis wave front radius (<0: none / complete)
 uniform float uScanR;    // decompile scan ring radius (<0: none)
-uniform vec3 uPools[8];  // x, y, r
+uniform vec3 uPools[12]; // x, y, r
 uniform int uPoolCount;
+uniform vec4 uLanes[4];  // cx, cy, hw, hh
+uniform vec4 uLaneS[4];  // dx, dy, scroll, warn(0..1) | frozen → negative warn
+uniform int uLaneCount;
+uniform vec4 uPads[8];   // x, y, phase01 state: 0 idle 1 mark(fill) 2 hot 3 retract, fill
+uniform int uPadCount;
 varying vec3 vW;
 ${NOISE}
 ${LIGHTS}
@@ -297,12 +303,15 @@ void main(){
   if(uScanR >= 0.0){
     float band = exp(-pow((rr - uScanR) * 1.4, 2.0));
     float erased = clamp((uScanR - rr) / 8.0, 0.0, 1.0);
-    col *= 1.0 - erased * 0.75 * (1.0 - uActMix);
+    col *= 1.0 - erased * 0.75 * (uAct < 0.5 ? 1.0 : 0.0);
     col += band * (vec3(0.1, 0.9, 1.4) * (0.6 + line * 1.5)) + band * line * vec3(0.8, 0.3, 1.2);
   }
-  // ── Плоть: living tissue with pulsing veins, synthesised outward from the centre
-  float fl = uActMix;
-  if(uSynthR >= 0.0) fl *= clamp((uSynthR - rr) / 4.0, 0.0, 1.0);
+  // biome weights: inside the synthesis front the new sector, outside it the old one
+  float inF = 1.0;
+  if(uSynthR >= 0.0) inF = clamp((uSynthR - rr) / 4.0, 0.0, 1.0);
+  float fl = (abs(uAct - 1.0) < 0.5 ? inF : 0.0) + (abs(uPrevAct - 1.0) < 0.5 && uSynthR >= 0.0 ? 1.0 - inF : 0.0);
+  float st = (abs(uAct - 2.0) < 0.5 ? inF : 0.0) + (abs(uPrevAct - 2.0) < 0.5 && uSynthR >= 0.0 ? 1.0 - inF : 0.0);
+  // ── Плоть: living tissue with pulsing veins
   if(fl > 0.0){
     vec2 wp = p * 0.42 + vec2(fbm(p * 0.12 + 3.1), fbm(p * 0.12 - 7.7)) * 1.6;
     vec3 c = cells(wp);
@@ -314,26 +323,127 @@ void main(){
     cell *= 0.75 + 0.5 * smoothstep(0.0, 0.5, c.x); // cell centres bulge (lighter), edges sink
     vec3 veinCol = vec3(0.22, 0.012, 0.035) * (0.35 + hb * 1.1 + travel * 0.25);
     vec3 fleshCol = cell + cell * litF * 4.0 + vein * veinCol + vein * litF * 0.05;
-    // wet specular sheen on bulging cells
     fleshCol += litF * 0.03 * smoothstep(0.15, 0.45, c.x);
-    // pools: dark glossy liquid with slow ripples and a glowing membrane rim
-    for(int k=0;k<8;k++){
-      if(k >= uPoolCount) break;
-      vec3 pl = uPools[k];
-      float d = length(p - pl.xy) / pl.z + (fbm(p * 0.8 + float(k)) - 0.5) * 0.18;
-      if(d < 1.08){
-        float inside = 1.0 - smoothstep(0.92, 1.0, d);
-        vec3 liquid = vec3(0.025, 0.0, 0.006) + litF * vec3(0.05, 0.03, 0.04) + vec3(0.06, 0.0, 0.012) * (0.5 + 0.5 * sin(d * 18.0 - uTime * 1.6)) * 0.4;
-        fleshCol = mix(fleshCol, liquid, inside);
-        fleshCol += vec3(0.35, 0.02, 0.08) * exp(-pow((d - 1.0) * 14.0, 2.0)) * (0.6 + hb);
+    if(uAct > 0.5 && uAct < 1.5){
+      for(int k=0;k<12;k++){
+        if(k >= uPoolCount) break;
+        vec3 pl = uPools[k];
+        float d = length(p - pl.xy) / pl.z + (fbm(p * 0.8 + float(k)) - 0.5) * 0.18;
+        if(d < 1.08){
+          float inside = 1.0 - smoothstep(0.92, 1.0, d);
+          vec3 liquid = vec3(0.025, 0.0, 0.006) + litF * vec3(0.05, 0.03, 0.04) + vec3(0.06, 0.0, 0.012) * (0.5 + 0.5 * sin(d * 18.0 - uTime * 1.6)) * 0.4;
+          fleshCol = mix(fleshCol, liquid, inside);
+          fleshCol += vec3(0.35, 0.02, 0.08) * exp(-pow((d - 1.0) * 14.0, 2.0)) * (0.6 + hb);
+        }
       }
     }
     col = mix(col, fleshCol, fl);
   }
+  // ── Литейный цех: riveted 4×4 steel plates, glowing seams, conveyor belts, stamp pads, coolant
+  if(st > 0.0){
+    vec2 pv = p / 4.0;
+    vec2 pid = floor(pv);
+    vec2 f = fract(pv) - 0.5;
+    float pidh = hash12(pid);
+    float seamD = 0.5 - max(abs(f.x), abs(f.y));
+    float seam = 1.0 - smoothstep(0.0, 0.018, seamD);
+    // brushed grain runs along alternate plates
+    float grain = vnoise(vec2((pidh > 0.5 ? p.x : p.y) * 0.4, (pidh > 0.5 ? p.y : p.x) * 22.0)) * 0.35;
+    vec3 plate = vec3(0.0068, 0.0072, 0.0095) * (0.7 + pidh * 0.6 + grain);
+    // rivets near each plate corner
+    vec2 rc = abs(f) - 0.42;
+    float rivet = smoothstep(0.035, 0.015, length(rc));
+    // seams carry a slow amber heat pulse outward from the centre
+    float heat = 0.5 + 0.5 * sin(rr * 0.35 - uTime * 1.4 + pidh * 2.0);
+    vec3 steelCol = plate + plate * litF * 3.5 + litF * 0.018 * (0.4 + grain);
+    steelCol += seam * vec3(0.12, 0.045, 0.008) * (0.2 + heat * 0.7) * uTint;
+    steelCol += rivet * (vec3(0.012, 0.013, 0.016) + litF * 0.08);
+    // hazard chevrons along the arena rim
+    vec2 eh = vec2(${ARENA_HW.toFixed(1)}, ${ARENA_HH.toFixed(1)}) - abs(p);
+    float rim = step(min(eh.x, eh.y), 1.1) * step(0.35, min(eh.x, eh.y));
+    float chev = step(0.5, fract((p.x + p.y) * 0.5));
+    steelCol = mix(steelCol, mix(vec3(0.004), vec3(0.09, 0.05, 0.004) + litF * 0.08, chev), rim * 0.85);
+    // conveyor belts: dark rubber, scrolling ribs, amber chevrons pointing the push direction
+    for(int k=0;k<4;k++){
+      if(k >= uLaneCount) break;
+      vec4 L = uLanes[k]; vec4 S = uLaneS[k];
+      vec2 q = p - L.xy;
+      vec2 e = L.zw - abs(q);
+      if(min(e.x, e.y) < -0.25) continue;
+      bool horiz = L.z > L.w;
+      float along = horiz ? q.x : q.y;
+      float across = horiz ? q.y : q.x;
+      float halfW = horiz ? L.w : L.z;
+      float dir = horiz ? S.x : S.y;
+      float u = along - S.z;
+      float inside = step(0.0, min(e.x, e.y));
+      float rib = smoothstep(0.08, 0.0, abs(fract(u * 2.0) - 0.5) - 0.38);
+      vec3 belt = vec3(0.006, 0.006, 0.008) + rib * vec3(0.012) + litF * 0.02;
+      // chevrons: |across| bends the stripe; dir flips it
+      float cv = fract((u * dir + abs(across) * 0.8) * 0.5);
+      float chevron = smoothstep(0.1, 0.0, abs(cv - 0.25) - 0.08) * step(abs(across), halfW * 0.8);
+      float warn = max(S.w, 0.0);
+      float flick = warn > 0.0 ? step(0.5, fract(uTime * 6.0)) : 1.0;
+      // during the warning a second, opposite chevron set fades in
+      float cv2 = fract((-u * dir + abs(across) * 0.8) * 0.5);
+      float chevron2 = smoothstep(0.1, 0.0, abs(cv2 - 0.25) - 0.08) * step(abs(across), halfW * 0.8) * warn;
+      vec3 amber = vec3(1.0, 0.45, 0.05);
+      float frozen = S.w < 0.0 ? 1.0 : 0.0;
+      vec3 chevCol = mix(amber, vec3(0.2, 0.9, 1.3), frozen) * (frozen > 0.0 ? 0.25 : 0.55);
+      belt += chevron * chevCol * flick + chevron2 * amber * 0.6 * (1.0 - flick);
+      // rails along both long edges
+      float rail = smoothstep(0.12, 0.0, abs(abs(across) - halfW));
+      belt += rail * (vec3(0.05, 0.05, 0.06) + litF * 0.2) + rail * amber * 0.25 * (0.5 + warn);
+      steelCol = mix(steelCol, belt, max(inside, rail));
+    }
+    // stamp pads: square plates with hazard rims; fill amber while marking, white-hot on impact
+    for(int k=0;k<8;k++){
+      if(k >= uPadCount) break;
+      vec4 P = uPads[k];
+      vec2 q = abs(p - P.xy);
+      float d = max(q.x, q.y);
+      if(d > 1.35) continue;
+      float inside = step(d, 1.0);
+      float stripe = step(0.5, fract((p.x - p.y) * 1.6));
+      float rimP = step(1.0, d) * step(d, 1.3);
+      vec3 pad = vec3(0.012, 0.012, 0.016) + litF * 0.05;
+      pad = mix(pad, mix(vec3(0.005), vec3(0.16, 0.08, 0.005), stripe), rimP);
+      float state = P.z;
+      if(state > 0.5 && state < 1.5){ // mark: fill rises outward from the centre
+        float fillR = P.w;
+        pad += inside * vec3(0.5, 0.2, 0.02) * (step(d, fillR) * 0.25 + smoothstep(0.05, 0.0, abs(d - fillR)) * 1.2);
+        pad += rimP * vec3(0.8, 0.35, 0.03) * (0.5 + 0.5 * step(0.5, fract(uTime * 8.0)));
+      } else if(state > 1.5 && state < 2.5){
+        pad += inside * vec3(2.2, 1.6, 1.1);
+      } else if(state > 2.5){
+        pad += inside * vec3(0.6, 0.18, 0.02) * (1.0 - P.w);
+      }
+      steelCol = mix(steelCol, pad, max(inside, rimP));
+    }
+    // coolant: violet, shimmering at ~4 Hz, conducts the arcs
+    for(int k=0;k<12;k++){
+      if(k >= uPoolCount) break;
+      vec3 pl = uPools[k];
+      float d = length(p - pl.xy) / pl.z + (vnoise(p * 1.4 + float(k) * 7.0 + uTime * 0.4) - 0.5) * 0.1;
+      if(d < 1.1){
+        float inside = 1.0 - smoothstep(0.94, 1.0, d);
+        float shim = 0.5 + 0.5 * sin(uTime * 25.13 + d * 9.0);
+        // thin bright caustic filaments over a near-black glossy liquid
+        float n1 = vnoise(p * 1.6 + vec2(uTime * 0.6, -uTime * 0.4));
+        float n2 = vnoise(p * 1.6 - vec2(uTime * 0.5, uTime * 0.7) + 4.0);
+        float caust = pow(1.0 - abs(n1 - n2), 14.0);
+        vec3 liquid = vec3(0.006, 0.003, 0.016) + vec3(0.16, 0.06, 0.5) * caust * (0.55 + shim * 0.45) + litF * vec3(0.02, 0.015, 0.05);
+        steelCol = mix(steelCol, liquid, inside);
+        steelCol += vec3(0.25, 0.1, 0.9) * exp(-pow((d - 1.0) * 18.0, 2.0)) * (0.45 + shim * 0.3);
+      }
+    }
+    col = mix(col, steelCol, st);
+  }
   // synthesis front: hot crimson-white seam where matter is being written
   if(uSynthR >= 0.0){
     float sb = exp(-pow((rr - uSynthR) * 0.9, 2.0));
-    col += sb * (vec3(1.6, 0.18, 0.35) + vec3(1.0) * pow(sb, 6.0)) * (0.7 + 0.3 * sin(atan(p.y, p.x) * 12.0 + uTime * 9.0));
+    vec3 seamCol = uAct > 1.5 ? vec3(1.7, 0.7, 0.12) : vec3(1.6, 0.18, 0.35);
+    col += sb * (seamCol + vec3(1.0) * pow(sb, 6.0)) * (0.7 + 0.3 * sin(atan(p.y, p.x) * 12.0 + uTime * 9.0));
   }
   // decals (blood / sap / oil / scorch)
   vec2 duv = vec2((p.x + ${ARENA_HW.toFixed(1)}) / ${ARENA_W.toFixed(1)}, 1.0 - (p.y + ${ARENA_HH.toFixed(1)}) / ${ARENA_H.toFixed(1)});
@@ -406,11 +516,17 @@ export class Floor {
         uCorrupt: { value: 0 },
         uPlayer: { value: new Vector3() },
         uWells: { value: Array.from({ length: 4 }, () => new Vector4()) },
-        uActMix: { value: 0 },
+        uAct: { value: 0 },
+        uPrevAct: { value: 0 },
         uSynthR: { value: -1 },
         uScanR: { value: -1 },
-        uPools: { value: Array.from({ length: 8 }, () => new Vector3()) },
+        uPools: { value: Array.from({ length: 12 }, () => new Vector3()) },
         uPoolCount: { value: 0 },
+        uLanes: { value: Array.from({ length: 4 }, () => new Vector4()) },
+        uLaneS: { value: Array.from({ length: 4 }, () => new Vector4()) },
+        uLaneCount: { value: 0 },
+        uPads: { value: Array.from({ length: 8 }, () => new Vector4()) },
+        uPadCount: { value: 0 },
         ...lights.uniforms,
       },
     });

@@ -35,6 +35,8 @@ export const QK = {
   Streak: 17,
   Hitmarker: 18,
   Mound: 19,
+  /** square impact telegraph: hazard rim, fill rising toward the edge; prog ≥ 1 = hot */
+  Plate: 20,
 } as const;
 
 /** Orientation modes */
@@ -213,6 +215,18 @@ void main(){
   } else if (k < 17.5) { // streak (dash afterimage / wind)
     float d = abs(uv.y);
     a = smoothstep(1.0, 0.0, d) * smoothstep(1.0, -0.6, uv.x) * smoothstep(-1.0, -0.7, uv.x) * (1.0 - prog);
+  } else if (k > 19.5) { // plate: square stamp zone (prog 0..1 filling, >1 hot)
+    vec2 au = abs(uv);
+    float d = max(au.x, au.y);
+    float hot = step(1.0, prog);
+    float f = min(prog, 1.0);
+    float rim = smoothstep(0.06, 0.0, abs(d - 0.95));
+    float stripe = step(0.5, fract((uv.x - uv.y) * 3.0 + uTime * 1.5)) * step(0.82, d) * step(d, 1.0);
+    float front = smoothstep(0.05, 0.0, abs(d - f)) * (1.0 - hot);
+    float fill = step(d, f) * (0.12 + f * 0.18);
+    a = (rim * (0.8 + f) + stripe * 0.35 + front * 1.4 + fill) * step(d, 1.0);
+    a += hot * step(d, 1.0) * 1.6;
+    col = mix(col, vec3(3.0, 2.6, 2.2), hot);
   } else if (k > 18.5) { // mound: soil heaving over something moving underneath — dark dome, glowing cracks
     float d = length(uv);
     float ang = atan(uv.y, uv.x);

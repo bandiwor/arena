@@ -35,6 +35,7 @@ export const WEAPONS: readonly WeaponDef[] = [
   { id: WP.Launcher, key: 'launcher', name: 'Мортира', desc: 'Гранаты с отскоком. Взрыв по площади.', rarity: 1, cooldown: 0.7, count: 1, spread: 0.02, speed: 22, speedJitter: 0, dmg: 55, radius: 0.3, life: 1.1, pierce: 0, bounce: 3, kind: BK.Grenade, knock: 9, shake: 0.4, hitstop: 0.03, recoil: 0.5, aoe: 3.6 },
   { id: WP.Rail, key: 'rail', name: 'Рельса', desc: 'Мгновенный луч, пробивает всё насквозь.', rarity: 2, cooldown: 0.9, count: 1, spread: 0, speed: 0, speedJitter: 0, dmg: 140, radius: 0.35, life: 0, pierce: 99, bounce: 0, kind: -1, knock: 12, shake: 0.55, hitstop: 0.06, recoil: 0.9, aoe: 0 },
   { id: WP.Singularity, key: 'singularity', name: 'Сингулярность', desc: 'Медленная чёрная дыра. Затягивает и схлопывается.', rarity: 3, cooldown: 2.2, count: 1, spread: 0, speed: 9, speedJitter: 0, dmg: 320, radius: 0.55, life: 1.6, pierce: 99, bounce: 0, kind: BK.Orb, knock: 0, shake: 0.7, hitstop: 0.1, recoil: 1.2, aoe: 7 },
+  { id: WP.ArcRail, key: 'arcrail', name: 'Дуговой рельс', desc: 'Луч пробивает до 3 целей и замыкает машины на 1 с.', rarity: 2, cooldown: 0.8, count: 1, spread: 0, speed: 0, speedJitter: 0, dmg: 60, radius: 0.35, life: 0, pierce: 3, bounce: 0, kind: -1, knock: 6, shake: 0.4, hitstop: 0.04, recoil: 0.6, aoe: 0 },
 ];
 // keep id order == array order
 WEAPONS.forEach((w, i) => {

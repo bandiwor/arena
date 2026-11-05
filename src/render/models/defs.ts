@@ -556,9 +556,264 @@ const growth: ModelDef = {
   },
 };
 
-export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, bloater, dart, worm, parasite, brood, boss, pillar, growth];
+// ═════════════════════════════ Акт III · ЛИТЕЙНЫЙ ЦЕХ ═════════════════════════════
+const STEEL = 0x3a4252;
+const STEEL_D = 0x232833;
+const STEEL_L = 0x5a6478;
+
+const mite: ModelDef = {
+  key: 'mite',
+  name: 'Шестерёнка-клещ (машина)',
+  height: 0.7,
+  rim: PAL.enemy,
+  params: { size: P(0.42, 0.25, 0.6), teeth: P(8, 4, 12, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['size']!;
+    const spin = { part: Part.Spin, param: 7, pivot: [0, R, 0] as const };
+    b.add(new TorusGeometry(R, R * 0.38, 4, 8), { color: STEEL, pos: [0, R, 0], rot: [0, 0, 0], ...spin });
+    const n = p['teeth']!;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      b.add(new BoxGeometry(0.16, 0.16, 0.14), { color: k % 2 ? PAL.hazard : STEEL_L, emit: k % 2 ? 0.7 : 0, pos: [Math.cos(a) * R * 1.35, R + Math.sin(a) * R * 1.35, 0], rot: [0, 0, a], ...spin });
+    }
+    b.add(new CylinderGeometry(R * 0.4, R * 0.4, R * 0.5, 6), { color: PAL.enemy, emit: 0.9, part: Part.Core, param: 0.5, pos: [0, R, 0], rot: [Math.PI / 2, 0, 0], pivot: [0, R, 0] });
+    return b.build();
+  },
+};
+
+const stamperM: ModelDef = {
+  key: 'stamper',
+  name: 'Штамповщик (машина)',
+  height: 1.9,
+  rim: PAL.enemy,
+  params: { base: P(0.9, 0.6, 1.2), hammer: P(0.6, 0.4, 0.9) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['base']!;
+    b.add(new CylinderGeometry(R, R * 1.05, 0.5, 6), { color: STEEL_D, pos: [0, 0.25, 0] });
+    b.add(new CylinderGeometry(R * 1.06, R * 1.06, 0.06, 6), { color: PAL.hazard, emit: 0.6, pos: [0, 0.52, 0] });
+    b.add(new BoxGeometry(0.8, 0.9, 0.9), { color: STEEL, pos: [-0.1, 1.0, 0] });
+    for (const z of [-1, 1]) {
+      b.add(new BoxGeometry(0.22, 0.9, 0.22), { color: STEEL_L, pos: [0.25, 1.25, z * 0.5], rot: [0, 0, -0.4] });
+      b.add(new BoxGeometry(0.5, 0.18, 0.2), { color: STEEL_D, pos: [0.6, 1.62, z * 0.42], part: Part.Recoil, param: -0.35 });
+    }
+    // hammer head: lifts/extends as the stamp winds up
+    const H = p['hammer']!;
+    b.add(new BoxGeometry(H * 1.2, H * 0.7, H * 1.6), { color: STEEL_L, pos: [0.95, 1.55, 0], part: Part.Recoil, param: -0.35 });
+    b.add(new BoxGeometry(H * 1.24, 0.08, H * 1.64), { color: PAL.hazard, emit: 0.9, pos: [0.95, 1.2, 0], part: Part.Recoil, param: -0.35 });
+    b.add(new SphereGeometry(0.12, 6, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.8, pos: [0.32, 1.25, 0], pivot: [0.32, 1.25, 0] });
+    return b.build();
+  },
+};
+
+const arcdrone: ModelDef = {
+  key: 'arcdrone',
+  name: 'Дуговой дрон (машина)',
+  height: 1.3,
+  rim: PAL.energy,
+  params: { core: P(0.3, 0.2, 0.45), rings: P(3, 1, 4, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const h = 1.05;
+    const R = p['core']!;
+    b.add(new IcosahedronGeometry(R, 1), { color: STEEL, pos: [0, h, 0], part: Part.Bob, param: 0.1 });
+    b.add(new IcosahedronGeometry(R * 0.55, 0), { color: PAL.energy, emit: 1, part: Part.Core, param: 1.2, pos: [0, h, 0], pivot: [0, h, 0] });
+    const n = p['rings']!;
+    for (let k = 0; k < n; k++) b.add(new TorusGeometry(R * (1.6 + k * 0.35), 0.03, 3, 18), { color: k % 2 ? PAL.enemy : PAL.energy, emit: 0.85, part: Part.Spin, param: (k % 2 ? -1 : 1) * (3 + k * 1.5), pos: [0, h, 0], rot: [Math.PI / 2 + 0.6 * (k - 1), 0, 0.5 * k], pivot: [0, h, 0] });
+    return b.build();
+  },
+};
+
+const haulerM: ModelDef = {
+  key: 'hauler',
+  name: 'Зажимщик (машина)',
+  height: 1.6,
+  rim: PAL.enemy,
+  params: { body: P(0.6, 0.4, 0.9), claw: P(0.45, 0.25, 0.7) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['body']!;
+    b.add(new BoxGeometry(R * 1.6, R * 0.9, R * 1.4), { color: STEEL, pos: [-0.1, 1.05, 0] });
+    b.add(new CylinderGeometry(0.3, 0.3, 0.7, 8), { color: STEEL_D, pos: [-0.3, 1.25, 0], rot: [Math.PI / 2, 0, 0] }); // winch drum
+    b.add(new TorusGeometry(0.31, 0.04, 3, 10), { color: PAL.hazard, emit: 0.7, part: Part.Spin, param: 4, pos: [-0.3, 1.25, 0], rot: [0, 0, 0], pivot: [-0.3, 1.25, 0] });
+    const start = b.vertexCount;
+    for (const x of [0.4, -0.6]) b.add(new CylinderGeometry(0.06, 0.04, 1.1, 4), { color: STEEL_L, part: Part.Leg, param: 0.8, pos: [x, 0.5, 0.5], rot: [-0.45, 0, 0], pivot: [x, 0.95, 0.3] });
+    b.mirrorZ(start);
+    // grapple head (opens with charge)
+    const C = p['claw']!;
+    b.add(new BoxGeometry(0.3, 0.3, 0.3), { color: STEEL_D, pos: [R + 0.25, 1.05, 0] });
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.07, C, 3), { color: PAL.hazard, emit: 0.6, part: Part.Petal, param: 0.6, pos: [R + 0.55, 1.05, z * 0.12], rot: [z * 0.5, 0, -Math.PI / 2], pivot: [R + 0.35, 1.05, 0] });
+    b.add(new SphereGeometry(0.1, 5, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.6, pos: [R + 0.1, 1.35, 0], pivot: [R + 0.1, 1.35, 0] });
+    return b.build();
+  },
+};
+
+const skiffM: ModelDef = {
+  key: 'skiff',
+  name: 'Пильный скиф (машина)',
+  height: 0.7,
+  rim: PAL.enemy,
+  params: { radius: P(0.6, 0.4, 0.9), teeth: P(14, 8, 24, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['radius']!;
+    const h = 0.35;
+    const spin = { part: Part.Spin, param: 16, pivot: [0, h, 0] as const };
+    b.add(new CylinderGeometry(R, R, 0.08, 18), { color: STEEL_L, pos: [0, h, 0], ...spin });
+    const n = p['teeth']!;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      b.add(new ConeGeometry(0.06, 0.2, 3), { color: k % 3 ? STEEL_L : PAL.hazard, emit: k % 3 ? 0.1 : 0.8, pos: [Math.cos(a) * (R + 0.06), h, Math.sin(a) * (R + 0.06)], rot: [0, -a, -Math.PI / 2], ...spin });
+    }
+    b.add(new BoxGeometry(0.4, 0.22, 0.3), { color: STEEL_D, pos: [0, h + 0.14, 0] });
+    b.add(new SphereGeometry(0.07, 5, 4), { color: PAL.enemy, emit: 1, pos: [0.18, h + 0.24, 0] });
+    return b.build();
+  },
+};
+
+const overseerM: ModelDef = {
+  key: 'overseer',
+  name: 'Надзиратель (машина)',
+  height: 2.6,
+  rim: PAL.hazard,
+  params: { mast: P(1.6, 1, 2.4), ring: P(0.6, 0.4, 0.9) },
+  build(p) {
+    const b = new ModelBuilder();
+    const M = p['mast']!;
+    const start = b.vertexCount;
+    for (const x of [0.4, -0.4]) b.add(new CylinderGeometry(0.06, 0.05, 1.0, 4), { color: STEEL_L, part: Part.Leg, param: 0.7, pos: [x, 0.45, 0.4], rot: [-0.35, 0, x > 0 ? -0.3 : 0.3], pivot: [x * 0.6, 0.9, 0.25] });
+    b.mirrorZ(start);
+    b.add(new BoxGeometry(0.6, 0.35, 0.6), { color: STEEL, pos: [0, 0.95, 0] });
+    b.add(new BoxGeometry(0.16, M, 0.16), { color: STEEL_D, pos: [0, 1.1 + M / 2, 0] });
+    const top = 1.15 + M;
+    b.add(new TorusGeometry(p['ring']!, 0.05, 4, 20), { color: PAL.hazard, emit: 0.9, part: Part.Spin, param: 1.5, pos: [0, top, 0], rot: [Math.PI / 2, 0, 0], pivot: [0, top, 0] });
+    b.add(new OctahedronGeometry(0.2, 0), { color: PAL.hazard, emit: 1, part: Part.Core, param: 1.2, pos: [0, top, 0], pivot: [0, top, 0] });
+    b.add(new SphereGeometry(0.09, 5, 4), { color: PAL.enemy, emit: 1, pos: [0.3, 1.0, 0] });
+    return b.build();
+  },
+};
+
+const pressM: ModelDef = {
+  key: 'press',
+  name: 'ПРЕСС (мини-босс)',
+  height: 4.5,
+  rim: PAL.hazard,
+  params: { head: P(2.2, 1.4, 3), column: P(1.6, 1, 2.4) },
+  build(p) {
+    const b = new ModelBuilder();
+    const H = p['head']!;
+    const lift = 2.6;
+    // hydraulic column + head; the whole head slams down with charge (Recoil on -y via rotation trick: Bob for idle)
+    b.add(new CylinderGeometry(0.5, 0.5, p['column']!, 8), { color: STEEL_L, pos: [0, lift + 1.2 + p['column']! / 2, 0] });
+    b.add(new BoxGeometry(H * 1.4, 0.9, H * 1.4), { color: STEEL, pos: [0, lift + 0.6, 0], part: Part.Bob, param: 0.08 });
+    b.add(new BoxGeometry(H * 1.5, 0.12, H * 1.5), { color: PAL.hazard, emit: 1, pos: [0, lift + 0.12, 0], part: Part.Bob, param: 0.08 });
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      b.add(new CylinderGeometry(0.16, 0.16, 1.4, 6), { color: STEEL_D, pos: [Math.cos(a) * H * 0.6, lift + 1.4, Math.sin(a) * H * 0.6] });
+      b.add(new SphereGeometry(0.12, 5, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.6, pos: [Math.cos(a) * H * 0.7, lift + 0.7, Math.sin(a) * H * 0.7], pivot: [Math.cos(a) * H * 0.7, lift + 0.7, Math.sin(a) * H * 0.7] });
+    }
+    // warning stripes on the front face
+    for (let k = 0; k < 5; k++) b.add(new BoxGeometry(0.06, 0.6, 0.3), { color: k % 2 ? PAL.hazard : STEEL_D, emit: k % 2 ? 0.8 : 0, pos: [H * 0.71, lift + 0.6, (k - 2) * 0.45], rot: [0.6, 0, 0] });
+    return b.build();
+  },
+};
+
+const assemblerM: ModelDef = {
+  key: 'assembler',
+  name: 'СБОРЩИК (босс акта)',
+  height: 4,
+  rim: PAL.energy,
+  params: { hub: P(2.2, 1.5, 3), plates: P(8, 4, 12, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    const R = p['hub']!;
+    b.add(new CylinderGeometry(R * 1.1, R * 1.25, 0.8, 8), { color: STEEL_D, pos: [0, 0.4, 0] });
+    b.add(new CylinderGeometry(R * 0.75, R * 0.9, 2.2, 8), { color: STEEL, pos: [0, 1.9, 0] });
+    // rotating segmented plates (iris) around the core
+    const n = p['plates']!;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      b.add(new BoxGeometry(0.2, 1.6, R * 0.7), { color: k % 2 ? STEEL_L : STEEL, pos: [Math.cos(a) * R * 0.95, 2.0, Math.sin(a) * R * 0.95], rot: [0, -a, 0], part: Part.Spin, param: 0.5, pivot: [0, 2, 0] });
+    }
+    b.add(new TorusGeometry(R * 1.15, 0.08, 4, 32), { color: PAL.energy, emit: 1, pos: [0, 0.85, 0], rot: [Math.PI / 2, 0, 0], part: Part.Spin, param: -1.2, pivot: [0, 0.85, 0] });
+    b.add(new SphereGeometry(0.75, 12, 8), { color: 0xffffff, emit: 1, part: Part.Core, param: 0.35, pos: [0, 3.3, 0], pivot: [0, 3.3, 0] });
+    b.add(new TorusGeometry(0.95, 0.1, 4, 18), { color: PAL.energy, emit: 1, pos: [0, 3.3, 0], rot: [Math.PI / 2, 0, 0] });
+    return b.build();
+  },
+};
+
+const armM: ModelDef = {
+  key: 'arm',
+  name: 'Манипулятор СБОРЩИКА',
+  height: 2.4,
+  rim: PAL.energy,
+  params: { reach: P(1.4, 0.8, 2) },
+  build(p) {
+    const b = new ModelBuilder();
+    const L = p['reach']!;
+    b.add(new CylinderGeometry(0.8, 1.0, 0.5, 6), { color: STEEL_D, pos: [0, 0.25, 0] });
+    b.add(new BoxGeometry(0.4, L, 0.4), { color: STEEL, pos: [0, 0.5 + L / 2, 0], part: Part.Bob, param: 0.05 });
+    b.add(new SphereGeometry(0.3, 6, 4), { color: PAL.hazard, emit: 0.8, pos: [0, 0.6 + L, 0], part: Part.Bob, param: 0.05 });
+    b.add(new BoxGeometry(L, 0.32, 0.32), { color: STEEL_L, pos: [L / 2, 0.6 + L, 0], part: Part.Bob, param: 0.05 });
+    for (const z of [-1, 1]) b.add(new ConeGeometry(0.08, 0.5, 3), { color: PAL.hazard, emit: 0.6, part: Part.Petal, param: 0.6, pos: [L + 0.3, 0.6 + L, z * 0.14], rot: [z * 0.5, 0, -Math.PI / 2], pivot: [L, 0.6 + L, 0] });
+    b.add(new SphereGeometry(0.12, 5, 4), { color: PAL.energy, emit: 1, part: Part.Core, param: 0.8, pos: [0, 0.6, 0.42], pivot: [0, 0.6, 0.42] });
+    return b.build();
+  },
+};
+
+const block: ModelDef = {
+  key: 'block',
+  name: 'Станок (колонна цеха)',
+  height: 1.8,
+  rim: PAL.hazard,
+  params: { vents: P(3, 0, 5, 1) },
+  build(p) {
+    const b = new ModelBuilder();
+    b.add(new BoxGeometry(1.6, 1.5, 1.6), { color: STEEL_D, pos: [0, 0.75, 0] });
+    b.add(new BoxGeometry(1.2, 0.35, 1.2), { color: STEEL, pos: [0, 1.67, 0] });
+    for (let k = 0; k < p['vents']!; k++) b.add(new BoxGeometry(1.62, 0.06, 0.9), { color: k === 0 ? PAL.hazard : STEEL_L, emit: k === 0 ? 0.8 : 0.1, pos: [0, 0.4 + k * 0.32, 0] });
+    b.add(new CylinderGeometry(0.18, 0.18, 0.5, 6), { color: STEEL_L, pos: [0.4, 2.0, 0.4] });
+    return b.build();
+  },
+};
+
+const pylon: ModelDef = {
+  key: 'pylon',
+  name: 'Дуговой пилон',
+  height: 2.6,
+  rim: PAL.energy,
+  params: { height: P(2.4, 1.5, 3.5) },
+  build(p) {
+    const b = new ModelBuilder();
+    const H = p['height']!;
+    b.add(new CylinderGeometry(0.55, 0.75, 0.4, 8), { color: STEEL_D, pos: [0, 0.2, 0] });
+    b.add(new CylinderGeometry(0.22, 0.3, H, 8), { color: STEEL, pos: [0, 0.4 + H / 2, 0] });
+    for (let k = 0; k < 3; k++) b.add(new TorusGeometry(0.42 + k * 0.08, 0.04, 3, 16), { color: PAL.energy, emit: 0.9, part: Part.Spin, param: (k % 2 ? -1 : 1) * 2, pos: [0, 0.9 + k * 0.6, 0], rot: [Math.PI / 2 + (k - 1) * 0.25, 0, 0], pivot: [0, 0.9 + k * 0.6, 0] });
+    b.add(new SphereGeometry(0.28, 8, 6), { color: PAL.energy, emit: 1, part: Part.Core, param: 0.9, pos: [0, 0.6 + H, 0], pivot: [0, 0.6 + H, 0] });
+    return b.build();
+  },
+};
+
+const piston: ModelDef = {
+  key: 'piston',
+  name: 'Гидропресс (поршень площадки)',
+  height: 3,
+  rim: PAL.hazard,
+  params: {},
+  build() {
+    const b = new ModelBuilder();
+    b.add(new BoxGeometry(1.9, 0.35, 1.9), { color: STEEL_L, pos: [0, 0.18, 0] });
+    b.add(new BoxGeometry(1.95, 0.06, 1.95), { color: PAL.hazard, emit: 0.7, pos: [0, 0.02, 0] });
+    b.add(new CylinderGeometry(0.28, 0.28, 3.2, 8), { color: STEEL, pos: [0, 1.95, 0] });
+    for (const [x, z] of [[0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const) b.add(new BoxGeometry(0.14, 0.5, 0.14), { color: STEEL_D, pos: [x, 0.55, z] });
+    return b.build();
+  },
+};
+
+export const MODELS: readonly ModelDef[] = [player, swarmer, gunner, charger, archer, shielder, bloater, dart, worm, parasite, brood, mite, stamperM, arcdrone, haulerM, skiffM, overseerM, pressM, assemblerM, armM, boss, pillar, growth, block, pylon, piston];
 /** enemy type index → model (matches ET order) */
-export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss, bloater, dart, worm, parasite, brood];
+export const ENEMY_MODELS: readonly ModelDef[] = [swarmer, gunner, charger, archer, shielder, boss, bloater, dart, worm, parasite, brood, mite, stamperM, arcdrone, haulerM, skiffM, overseerM, pressM, assemblerM, armM];
 
 export function modelByKey(key: string): ModelDef {
   const m = MODELS.find((x) => x.key === key);

@@ -23,6 +23,17 @@ const LORE: Record<number, readonly (readonly [number, string])[]> = {
     [6.6, '> МОНОЛИТ был лишь стражем. ядро глубже.'],
     [7.6, '> итерация #{seed} продолжается_'],
   ],
+  2: [
+    [0.2, '> МАТКА: биомасса 0% · образцы утрачены'],
+    [0.9, '> ткань сектора отклонена сборкой'],
+    [1.6, '> декомпиляция органики ......... 100%'],
+    [2.6, '> переплавка → литейная линия 9'],
+    [3.6, '> доступ: архив «ЛИТЕЙНЫЙ ЦЕХ» · цикл пресса 2.0 с'],
+    [4.7, '> синтез среды ████████████ ok'],
+    [5.7, '> СБОРЩИК: сборка 9.3 · компонент «Вектор» (устаревший)'],
+    [6.6, '> ты не сбой. ты — деталь, которую хотят заменить.'],
+    [7.6, '> итерация #{seed} продолжается_'],
+  ],
 };
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document): T => {
@@ -117,14 +128,19 @@ export class Hud {
         const aw = actWave(idx);
         const flesh = aw.act === 1;
         const col = boss ? (flesh ? '#ff2d7a' : '#9b5cff') : flesh ? '#ff6a7a' : '#2ef2ff';
-        this.showBanner(boss ? (def?.name ?? 'БОСС') : `ВОЛНА ${aw.n}`, boss ? `АКТ ${ROMAN[aw.act]} · ФИНАЛ` : (def?.name.toUpperCase() ?? ''), col, 2.2);
+        const foundry = aw.act === 2;
+        const col2 = foundry ? (boss ? '#ffa126' : '#ffc46a') : col;
+        const last = idx === WAVES.length - 1 || (WAVES[idx + 1]?.act ?? 0) !== aw.act;
+        this.showBanner(boss ? (def?.name ?? 'БОСС') : `ВОЛНА ${aw.n}`, boss ? `АКТ ${ROMAN[aw.act]} · ${last ? 'ФИНАЛ' : 'СТРАЖ ЛИНИИ'}` : (def?.name.toUpperCase() ?? ''), col2, 2.2);
+        // archive note for this wave, typed into the terminal log
+        if (def?.lore && this.logT < 0) this.startLines([[1.2, `> ${def.lore}`]], 6.5);
         break;
       }
       case Ev.ActTransition:
         break; // the log is started from update() when the transition phase is seen
       case Ev.ActSynth: {
         const act = d[o + 3]!;
-        this.showBanner(`АКТ ${ROMAN[act]}`, ACT_NAMES[act] ?? '', act === 1 ? '#ff2d4a' : '#2ef2ff', 3.2);
+        this.showBanner(`АКТ ${ROMAN[act]}`, ACT_NAMES[act] ?? '', act === 1 ? '#ff2d4a' : act === 2 ? '#ffa126' : '#2ef2ff', 3.2);
         break;
       }
       case Ev.WaveClear:
@@ -274,7 +290,13 @@ export class Hud {
 
   /** terminal log of the archive, typed out during an act transition */
   startLog(act: number): void {
-    this.logLines = LORE[act] ?? [];
+    this.startLines(LORE[act] ?? [], 10.5);
+  }
+
+  private logEnd = 10.5;
+  private startLines(lines: readonly (readonly [number, string])[], end: number): void {
+    this.logLines = lines;
+    this.logEnd = end;
     this.logT = 0;
     this.logShown = '';
     this.log.classList.remove('hidden', 'out');
@@ -295,8 +317,8 @@ export class Hud {
       this.log.textContent = out;
       this.logShown = out;
     }
-    if (this.logT > 9.5) this.log.classList.add('out');
-    if (this.logT > 10.5) {
+    if (this.logT > this.logEnd - 1) this.log.classList.add('out');
+    if (this.logT > this.logEnd) {
       this.log.classList.add('hidden');
       this.logT = -1;
     }

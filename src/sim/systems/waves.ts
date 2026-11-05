@@ -42,6 +42,10 @@ export function updateWaves(w: World, cmd: InputCmd): void {
         allDone = false;
         if (W.t >= grp.at && W.t >= W.groupNext[g]!) {
           placeSpawn(w, grp.place, W.spawned[g]!, spawnPos);
+          if (grp.type === ET.Assembler) {
+            spawnPos[0] = 0;
+            spawnPos[1] = -3;
+          }
           let affix = grp.affix ?? 0;
           if (affix === 0 && grp.type !== ET.Boss && w.rng.chance(w.diff.eliteChance)) affix = 1 << w.rng.int(3);
           spawnEnemy(w, grp.type, spawnPos[0]!, spawnPos[1]!, { affix });
@@ -141,7 +145,7 @@ function synthesise(w: World, act: number): void {
 }
 
 function groupCount(w: World, type: number, count: number): number {
-  if (type === ET.Boss) return count;
+  if (type === ET.Boss || type === ET.Brood || type === ET.Press || type === ET.Assembler || type === ET.Overseer) return count;
   return Math.max(1, Math.round(count * w.diff.countMul * (1 + w.director.adapt)));
 }
 
@@ -229,6 +233,10 @@ function recomputePhysTarget(w: World): void {
   Object.assign(t, d);
   for (let m = 0; m < MUTATORS.length; m++) if (w.mutators & (1 << m)) MUTATORS[m]!.apply(t, w);
   w.phys.wallBounce = t.wallBounce;
+  w.phys.lanePeriod = t.lanePeriod;
+  w.phys.magnetic = t.magnetic;
+  w.phys.lockstep = t.lockstep;
+  w.phys.flood = t.flood;
 }
 
 export function updatePhys(w: World): void {

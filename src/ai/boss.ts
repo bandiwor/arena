@@ -172,6 +172,7 @@ export function updateBoss(w: World, i: number): void {
           L.warmMax[k] = 1.1 * w.diff.teleMul;
           L.life[k] = 4.4;
           L.dmg[k] = 18;
+          L.owner[k] = i;
         }
         w.events.push(Ev.LaserFire, x, y, toP);
       }
@@ -227,9 +228,11 @@ export function updateLasers(w: World): void {
   for (let k = 0; k < MAX_LASERS; k++) {
     if (!L.alive[k]) continue;
     L.angP[k] = L.ang[k]!;
-    if (bi >= 0) {
-      L.x[k] = w.enemies.x[bi]!;
-      L.y[k] = w.enemies.y[bi]!;
+    const own = L.owner[k]!;
+    const ownerAlive = own < 0 || (w.enemies.alive[own] === 1 && own === bi);
+    if (own >= 0 && ownerAlive) {
+      L.x[k] = w.enemies.x[own]!;
+      L.y[k] = w.enemies.y[own]!;
     }
     if (L.warm[k]! > 0) {
       L.warm[k] = L.warm[k]! - DT;
@@ -238,13 +241,14 @@ export function updateLasers(w: World): void {
     }
     L.ang[k] = L.ang[k]! + L.angVel[k]! * DT;
     L.life[k] = L.life[k]! - DT;
-    if (L.life[k]! <= 0 || bi < 0) {
+    if (L.life[k]! <= 0 || !ownerAlive) {
       L.alive[k] = 0;
       continue;
     }
     const a = L.ang[k]!;
-    const x0 = L.x[k]! + dcos(a) * 2.2;
-    const y0 = L.y[k]! + dsin(a) * 2.2;
+    const s0 = own >= 0 ? 2.2 : 0.8;
+    const x0 = L.x[k]! + dcos(a) * s0;
+    const y0 = L.y[k]! + dsin(a) * s0;
     const x1 = L.x[k]! + dcos(a) * L.len[k]!;
     const y1 = L.y[k]! + dsin(a) * L.len[k]!;
     const r = L.width[k]! + 0.3;

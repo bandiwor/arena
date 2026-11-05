@@ -6,6 +6,7 @@ import { quantizeCmd, type InputCmd } from './input';
 import { collideBullets, updateBullets } from './systems/bullets';
 import { updatePlayer } from './systems/player';
 import { updatePickups } from './systems/pickups';
+import { updateFoundry } from './systems/foundry';
 import { updateDirector, updatePhys, updateWaves } from './systems/waves';
 import { DT } from './constants';
 import { World, type WorldOptions } from './world';
@@ -34,6 +35,7 @@ export class Sim {
     E.rebuildActive();
     updateEnemies(w);
     updateLasers(w);
+    updateFoundry(w);
     updateBullets(w);
     E.rebuildActive();
     w.grid.build(E.active, E.activeCount, E.x, E.y);

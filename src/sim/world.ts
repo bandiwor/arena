@@ -12,6 +12,11 @@ import {
   MAX_PICKUPS,
   MAX_PILLARS,
   MAX_POOLS,
+  MAX_LANES,
+  MAX_PADS,
+  MAX_PYLONS,
+  MAX_MARKS,
+  MAX_TRACKS,
   MAX_WELLS,
   WEAPON_COUNT,
 } from './constants';
@@ -84,6 +89,10 @@ export class EnemyStore {
   readonly buff = new Uint8Array(MAX_ENEMIES);
   /** Призма shield: >0 durability left; <0 = broken, counts up to 0 (seconds until it reforms) */
   readonly shield = new Float32Array(MAX_ENEMIES);
+  /** >0: shorted by electricity (machines stunned, others can't attack) */
+  readonly shortT = new Float32Array(MAX_ENEMIES);
+  /** >0: hastened by an Overseer */
+  readonly haste = new Float32Array(MAX_ENEMIES);
   /** last utility scores, 6 per enemy (debug + inspector) */
   readonly util = new Float32Array(MAX_ENEMIES * 6);
   /** packed list of alive ids, rebuilt by rebuildActive() */
@@ -123,6 +132,8 @@ export class BulletStore {
   readonly knock = new Float32Array(MAX_BULLETS);
   readonly aoe = new Float32Array(MAX_BULLETS);
   readonly crit = new Uint8Array(MAX_BULLETS);
+  /** magnetic rounds: locked target (−1 none) */
+  readonly homing = new Int16Array(MAX_BULLETS);
   /** cosmetic launch height (muzzle), renderer eases toward cruise height */
   readonly h0 = new Float32Array(MAX_BULLETS);
 }
@@ -146,6 +157,8 @@ export class PickupStore {
 /** Rotating damage beams (boss lasers). */
 export class LaserStore {
   readonly alive = new Uint8Array(MAX_LASERS);
+  /** enemy slot the beam is attached to (−1 = static beam, e.g. ASSEMBLER weld) */
+  readonly owner = new Int16Array(MAX_LASERS);
   readonly x = new Float32Array(MAX_LASERS);
   readonly y = new Float32Array(MAX_LASERS);
   readonly ang = new Float32Array(MAX_LASERS);
@@ -176,12 +189,148 @@ export class Pools {
   readonly x = new Float32Array(MAX_POOLS);
   readonly y = new Float32Array(MAX_POOLS);
   readonly r = new Float32Array(MAX_POOLS);
-  add(x: number, y: number, r: number): void {
+  /** seconds left (−1 = permanent) — flood mutator pools evaporate */
+  readonly life = new Float32Array(MAX_POOLS);
+  add(x: number, y: number, r: number, life = -1): void {
     if (this.count >= MAX_POOLS) return;
     this.x[this.count] = x;
     this.y[this.count] = y;
     this.r[this.count] = r;
+    this.life[this.count] = life;
     this.count++;
+  }
+  remove(k: number): void {
+    const n = --this.count;
+    this.x[k] = this.x[n]!;
+    this.y[k] = this.y[n]!;
+    this.r[k] = this.r[n]!;
+    this.life[k] = this.life[n]!;
+  }
+  /** index of a pool containing (x, y), or −1 */
+  at(x: number, y: number): number {
+    for (let k = 0; k < this.count; k++) {
+      const dx = x - this.x[k]!;
+      const dy = y - this.y[k]!;
+      if (dx * dx + dy * dy < this.r[k]! * this.r[k]!) return k;
+    }
+    return -1;
+  }
+}
+
+/** Foundry conveyor lanes: axis-aligned rects that carry ground entities and reverse on a cycle. */
+export class Lanes {
+  count = 0;
+  readonly cx = new Float32Array(MAX_LANES);
+  readonly cy = new Float32Array(MAX_LANES);
+  readonly hw = new Float32Array(MAX_LANES);
+  readonly hh = new Float32Array(MAX_LANES);
+  readonly dx = new Float32Array(MAX_LANES);
+  readonly dy = new Float32Array(MAX_LANES);
+  /** time inside the current cycle */
+  readonly t = new Float32Array(MAX_LANES);
+  /** >0: reversal suspended (Overseer death, PRESS defeat) */
+  readonly frozen = new Float32Array(MAX_LANES);
+  /** >0: forced inward push toward the arena centre (ASSEMBLER CONVEYOR) */
+  readonly inward = new Float32Array(MAX_LANES);
+  add(cx: number, cy: number, hw: number, hh: number, dx: number, dy: number, t0: number): void {
+    if (this.count >= MAX_LANES) return;
+    const k = this.count++;
+    this.cx[k] = cx;
+    this.cy[k] = cy;
+    this.hw[k] = hw;
+    this.hh[k] = hh;
+    this.dx[k] = dx;
+    this.dy[k] = dy;
+    this.t[k] = t0;
+    this.frozen[k] = 0;
+    this.inward[k] = 0;
+  }
+  at(x: number, y: number): number {
+    for (let k = 0; k < this.count; k++) if (Math.abs(x - this.cx[k]!) < this.hw[k]! && Math.abs(y - this.cy[k]!) < this.hh[k]!) return k;
+    return -1;
+  }
+}
+
+/** Hydraulic stamp pads (2×2), paired with phase offsets. */
+export class Pads {
+  count = 0;
+  readonly x = new Float32Array(MAX_PADS);
+  readonly y = new Float32Array(MAX_PADS);
+  readonly offset = new Float32Array(MAX_PADS);
+  add(x: number, y: number, offset: number): void {
+    if (this.count >= MAX_PADS) return;
+    this.x[this.count] = x;
+    this.y[this.count] = y;
+    this.offset[this.count] = offset;
+    this.count++;
+  }
+}
+
+/** Arc pylons (also registered as pillars for collision). charge > 0 while building up. */
+export class Pylons {
+  count = 0;
+  readonly pillar = new Int8Array(MAX_PYLONS);
+  readonly charge = new Float32Array(MAX_PYLONS);
+}
+
+/** Telegraphed impact zones (stamper marks, PRESS stamps): fill, then hot for a moment. */
+export class Marks {
+  readonly alive = new Uint8Array(MAX_MARKS);
+  readonly x = new Float32Array(MAX_MARKS);
+  readonly y = new Float32Array(MAX_MARKS);
+  readonly r = new Float32Array(MAX_MARKS);
+  /** square marks use r as half-size */
+  readonly square = new Uint8Array(MAX_MARKS);
+  readonly t = new Float32Array(MAX_MARKS);
+  readonly fill = new Float32Array(MAX_MARKS);
+  readonly hot = new Float32Array(MAX_MARKS);
+  readonly dmg = new Float32Array(MAX_MARKS);
+  readonly src = new Uint8Array(MAX_MARKS);
+  hi = 0;
+  add(x: number, y: number, r: number, fill: number, hot: number, dmg: number, src: number, square = false): number {
+    for (let i = 0; i < MAX_MARKS; i++) {
+      if (this.alive[i]) continue;
+      this.alive[i] = 1;
+      this.x[i] = x;
+      this.y[i] = y;
+      this.r[i] = r;
+      this.square[i] = square ? 1 : 0;
+      this.t[i] = 0;
+      this.fill[i] = fill;
+      this.hot[i] = hot;
+      this.dmg[i] = dmg;
+      this.src[i] = src;
+      if (i + 1 > this.hi) this.hi = i + 1;
+      return i;
+    }
+    return -1;
+  }
+  inside(i: number, x: number, y: number, pad = 0): boolean {
+    const dx = x - this.x[i]!;
+    const dy = y - this.y[i]!;
+    const r = this.r[i]! + pad;
+    return this.square[i] ? Math.abs(dx) < r && Math.abs(dy) < r : dx * dx + dy * dy < r * r;
+  }
+}
+
+/** Saw tracks: short segments that heat up, then burn for a while (ring buffer). */
+export class Tracks {
+  readonly alive = new Uint8Array(MAX_TRACKS);
+  readonly x0 = new Float32Array(MAX_TRACKS);
+  readonly y0 = new Float32Array(MAX_TRACKS);
+  readonly x1 = new Float32Array(MAX_TRACKS);
+  readonly y1 = new Float32Array(MAX_TRACKS);
+  readonly age = new Float32Array(MAX_TRACKS);
+  cursor = 0;
+  add(x0: number, y0: number, x1: number, y1: number): void {
+    const i = this.cursor;
+    this.cursor = (this.cursor + 1) % MAX_TRACKS;
+    this.alive[i] = 1;
+    this.x0[i] = x0;
+    this.y0[i] = y0;
+    this.x1[i] = x1;
+    this.y1[i] = y1;
+    this.age[i] = 0;
   }
 }
 
@@ -218,6 +367,12 @@ export interface Phys {
   windWalkers: number;
   /** projectile lifetime multiplier */
   bulletLife: number;
+  /** Foundry: conveyor reversal period, seconds */
+  lanePeriod: number;
+  /** Foundry mutators (discrete switches) */
+  magnetic: number;
+  lockstep: number;
+  flood: number;
 }
 
 export function defaultPhys(): Phys {
@@ -232,6 +387,10 @@ export function defaultPhys(): Phys {
     wallBounce: 0,
     windWalkers: 0,
     bulletLife: 1,
+    lanePeriod: 12,
+    magnetic: 0,
+    lockstep: 0,
+    flood: 0,
   };
 }
 
@@ -247,6 +406,12 @@ export interface PlayerStats {
   dashCdMul: number;
   lifesteal: number;
   dashShock: number;
+  /** insulated plating: immune to arcs */
+  insulated: number;
+  /** extra arc chain targets */
+  arcChain: number;
+  /** machine kills burst into rivet shrapnel */
+  shrapnel: number;
 }
 
 export interface Player {
@@ -277,6 +442,10 @@ export interface Player {
   slotCount: number;
   cur: number;
   stats: PlayerStats;
+  /** being reeled in by a Clamp Hauler */
+  pullT: number;
+  pullBy: number;
+  pullGen: number;
   /** visual recoil impulse 0..1 */
   recoil: number;
   walk: number;
@@ -382,6 +551,13 @@ export class World {
   readonly wells = new WellStore();
   readonly pillars = new Pillars();
   readonly pools = new Pools();
+  readonly lanes = new Lanes();
+  readonly pads = new Pads();
+  readonly pylons = new Pylons();
+  readonly marks = new Marks();
+  readonly tracks = new Tracks();
+  /** flood mutator clock */
+  floodT = 0;
   /** current act (0 = Карантин, 1 = Плоть) */
   act = 0;
   /** active mini-boss slot (Матка), -1 if none */
@@ -451,9 +627,15 @@ export class World {
         dashCdMul: 1,
         lifesteal: 0,
         dashShock: 0,
+        insulated: 0,
+        arcChain: 0,
+        shrapnel: 0,
       },
       recoil: 0,
       walk: 0,
+      pullT: 0,
+      pullBy: -1,
+      pullGen: 0,
     };
     this.player.slots[0] = 0;
     this.wave = {
@@ -512,6 +694,11 @@ export function buildArenaLayout(w: World): void {
   const P = w.pillars;
   P.count = 0;
   w.pools.count = 0;
+  w.lanes.count = 0;
+  w.pads.count = 0;
+  w.pylons.count = 0;
+  w.marks.alive.fill(0);
+  w.tracks.alive.fill(0);
   if (w.act === 0) {
     P.add(-14, -8, 1.6);
     P.add(14, -8, 1.6);
@@ -521,6 +708,38 @@ export function buildArenaLayout(w: World): void {
     P.add(0, 15, 1.2);
     P.add(-26, 0, 1.3);
     P.add(26, 0, 1.3);
+  } else if (w.act === 2) {
+    // Литейный цех: machine blocks, two arc pylons, four conveyor lanes, stamp pad pairs, coolant
+    P.add(-16, -12, 1.5);
+    P.add(16, 12, 1.5);
+    P.add(-28, 12, 1.3);
+    P.add(28, -12, 1.3);
+    const py = w.pylons;
+    py.count = 0;
+    for (const [x, y] of [[-10, 6], [10, -6]] as const) {
+      py.pillar[py.count] = P.count;
+      py.charge[py.count] = 0;
+      py.count++;
+      P.add(x, y, 0.8);
+    }
+    const L = w.lanes;
+    L.count = 0;
+    L.add(-20, -3, 4, 1, 1, 0, 0);
+    L.add(20, 3, 4, 1, -1, 0, 6);
+    L.add(0, -18, 1, 4, 0, 1, 3);
+    L.add(0, 18, 1, 4, 0, -1, 9);
+    const D = w.pads;
+    D.count = 0;
+    D.add(-6, -14, 0);
+    D.add(-3, -14, 1);
+    D.add(3, 14, 0);
+    D.add(6, 14, 1);
+    D.add(-26, -18, 0);
+    D.add(-23, -18, 1);
+    w.pools.add(-6, 4, 2.5);
+    w.pools.add(6, -4, 2.5);
+    w.pools.add(-24, 6, 2.5);
+    w.pools.add(24, -6, 2.5);
   } else {
     // Плоть: asymmetric growths around a central open "womb"; flesh pools in the lanes
     P.add(-11, -11, 1.8);

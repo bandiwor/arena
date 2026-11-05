@@ -1,3 +1,4 @@
+import { PAD_CYCLE, PAD_HOT, PAD_MARK, PAD_RETRACT, padPhase } from '../sim/systems/foundry';
 import {
   DynamicDrawUsage,
   InstancedBufferAttribute,
@@ -174,6 +175,10 @@ export class EntityRenderer {
   readonly pillars: InstancedModel;
   /** Act II flesh growths */
   readonly growths: InstancedModel;
+  /** Act III machine blocks, arc pylons and stamp-pad pistons */
+  readonly blocks: InstancedModel;
+  readonly pylons: InstancedModel;
+  readonly pistons: InstancedModel;
   private readonly shadowMesh: InstancedMesh;
   private readonly shadowAttr: InstancedBufferAttribute;
   private shadowCount = 0;
@@ -193,7 +198,7 @@ export class EntityRenderer {
 
   constructor(scene: Scene, lights: LightPool) {
     for (let t = 0; t < ENEMY_TYPE_COUNT; t++) {
-      const m = new InstancedModel(ENEMY_MODELS[t]!, lights, t === ET.Boss || t === ET.Brood ? 4 : MAX_ENEMIES + GHOSTS);
+      const m = new InstancedModel(ENEMY_MODELS[t]!, lights, t === ET.Boss || t === ET.Brood || t === ET.Press || t === ET.Assembler ? 4 : t === ET.Arm ? 12 : MAX_ENEMIES + GHOSTS);
       this.enemies.push(m);
       scene.add(m.mesh);
     }
@@ -203,6 +208,12 @@ export class EntityRenderer {
     scene.add(this.pillars.mesh);
     this.growths = new InstancedModel(modelByKey('growth'), lights, 16);
     scene.add(this.growths.mesh);
+    this.blocks = new InstancedModel(modelByKey('block'), lights, 16);
+    scene.add(this.blocks.mesh);
+    this.pylons = new InstancedModel(modelByKey('pylon'), lights, 8);
+    scene.add(this.pylons.mesh);
+    this.pistons = new InstancedModel(modelByKey('piston'), lights, 8);
+    scene.add(this.pistons.mesh);
     const sg = new PlaneGeometry(1, 1);
     this.shadowAttr = new InstancedBufferAttribute(new Float32Array((MAX_ENEMIES + 8) * 4), 4);
     this.shadowAttr.setUsage(DynamicDrawUsage);
@@ -275,6 +286,8 @@ export class EntityRenderer {
           const e = Math.min(1, E.stT[k]! / 0.25);
           h = -1.3 + e * 1.3 + Math.sin(e * Math.PI) * 0.9; // bursts up past the surface, settles
         }
+      } else if (t === ET.ArcDrone) {
+        h = 0.15 + Math.sin(time * 3 + E.seed[k]! * 9) * 0.12;
       } else if (t === ET.Parasite && st === AS.Attached) {
         const host = E.tx[k]! | 0;
         h = enemyDef(E.type[host] ?? 0).height * 0.72;
@@ -333,15 +346,13 @@ export class EntityRenderer {
     pl.end(time);
     // pillars (static, but re-pushed for uTime/simplicity)
     const P = w.pillars;
-    const pm = w.act === 0 ? this.pillars : this.growths;
-    const other = w.act === 0 ? this.growths : this.pillars;
-    other.begin();
-    other.end(time);
-    pm.begin();
+    const sets = [this.pillars, this.growths, this.blocks, this.pylons];
+    for (const m of sets) m.begin();
     // act transition: before the synthesis the old pillars decompile (dissolve upward into pixels);
-    // after it, new growths sprout as the synthesis wave front passes over them
+    // after it, the new sector's structures assemble as the synthesis wave front passes over them
     let tr = -1;
     if (w.wave.phase === WavePhase.Transition) tr = w.wave.t + alpha * (1 / 60);
+    const Y = w.pylons;
     for (let k = 0; k < P.count; k++) {
       let spawn = 1;
       let flash = 0;
@@ -355,9 +366,41 @@ export class EntityRenderer {
         spawn = Math.max(0, Math.min(0.999, (front - dist) / 6));
         if (spawn <= 0) continue;
       }
-      pm.push(P.x[k]!, 0, P.y[k]!, k * 0.5, P.r[k]!, flash, spawn, 0, k * 0.13, 0, 0, 0, 0);
+      let m = sets[Math.min(2, w.act)]!;
+      let charge = 0;
+      let scale = P.r[k]!;
+      if (w.act === 2) {
+        scale = P.r[k]! / 0.8;
+        for (let j = 0; j < Y.count; j++) {
+          if (Y.pillar[j] !== k) continue;
+          m = this.pylons;
+          scale = P.r[k]! / 0.8;
+          charge = Y.charge[j]! > 0 ? 1 - Y.charge[j]! : 0;
+          flash = Math.max(flash, charge * charge * 0.8);
+        }
+        if (m === this.blocks) scale = P.r[k]! / 0.8;
+      }
+      m.push(P.x[k]!, 0, P.y[k]!, k * 0.5, scale, flash, spawn, charge, k * 0.13, 0, 0, 0, 0);
     }
-    pm.end(time);
+    for (const m of sets) m.end(time);
+    // stamp-pad pistons: hang above the pad, drop on the stamp, lift during retract
+    const pi = this.pistons;
+    pi.begin();
+    const D = w.pads;
+    if (tr < 0 || tr >= TRANS_SYNTH + 1.5) {
+      for (let k = 0; k < D.count; k++) {
+        const ph = padPhase(w, k);
+        let h = 3.2;
+        let fl = 0;
+        if (ph >= PAD_MARK && ph < PAD_HOT) h = 3.2 + Math.sin(((ph - PAD_MARK) / (PAD_HOT - PAD_MARK)) * Math.PI * 9) * 0.06 * ((ph - PAD_MARK) / (PAD_HOT - PAD_MARK)); // shudders as pressure builds
+        else if (ph >= PAD_HOT && ph < PAD_RETRACT) {
+          h = Math.max(0, 3.2 * (1 - (ph - PAD_HOT) / 0.06));
+          fl = 0.6;
+        } else if (ph >= PAD_RETRACT) h = 3.2 * Math.min(1, (ph - PAD_RETRACT) / (PAD_CYCLE - PAD_RETRACT));
+        pi.push(D.x[k]!, h, D.y[k]!, 0, 1, fl, 1, 0, k * 0.2, 0, 0, 0, 0);
+      }
+    }
+    pi.end(time);
     this.shadowMesh.count = this.shadowCount;
     this.shadowAttr.clearUpdateRanges();
     this.shadowAttr.addUpdateRange(0, this.shadowCount * 4);
@@ -366,4 +409,4 @@ export class EntityRenderer {
 }
 
 /** Models are authored at the sim radius of each type; scale = 1 at default radius. */
-const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6, 0.75, 0.42, 0.6, 0.36, 2.3];
+const ENEMY_BASE_R = [0.45, 0.6, 0.95, 0.6, 0.85, 2.6, 0.75, 0.42, 0.6, 0.36, 2.3, 0.4, 0.9, 0.45, 0.8, 0.6, 0.8, 2.2, 2.4, 1.1];

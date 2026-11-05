@@ -1,6 +1,6 @@
 import { Affix, ET, type EnemyType } from '../constants';
 
-export type Placement = 'edge' | 'ring' | 'random' | 'far' | 'corners';
+export type Placement = 'edge' | 'ring' | 'random' | 'far' | 'corners' | 'lanes';
 
 export interface SpawnGroup {
   readonly type: EnemyType;
@@ -21,6 +21,8 @@ export interface WaveDef {
   readonly boss?: boolean;
   /** 0 = Акт I «Карантин», 1 = Акт II «Плоть» */
   readonly act?: number;
+  /** short archive line shown under the wave banner */
+  readonly lore?: string;
 }
 
 export const WAVES: readonly WaveDef[] = [
@@ -160,9 +162,75 @@ export const WAVES: readonly WaveDef[] = [
     ],
     boss: true,
   },
+  // ─────────────── Акт III · ЛИТЕЙНЫЙ ЦЕХ
+  {
+    name: 'Ленты',
+    act: 2,
+    lore: 'Конвейер 3 несёт старую маршрутизацию. Не останавливать.',
+    groups: [
+      { type: ET.GearMite, count: 8, at: 0.5, every: 0.3, place: 'lanes' },
+      { type: ET.GearMite, count: 6, at: 12, every: 0.3, place: 'edge' },
+      { type: ET.Swarmer, count: 6, at: 18, every: 0.25, place: 'far' },
+    ],
+  },
+  {
+    name: 'Пресс',
+    act: 2,
+    lore: 'Цикл пресса 2.0 с. Удары записаны как уплотнение, а не урон.',
+    groups: [
+      { type: ET.Stamper, count: 2, at: 0.5, every: 1.5, place: 'corners' },
+      { type: ET.GearMite, count: 6, at: 5, every: 0.3, place: 'lanes' },
+      { type: ET.Gunner, count: 2, at: 12, every: 1, place: 'ring' },
+    ],
+    mutator: 'lockstep',
+  },
+  {
+    name: 'Ток',
+    act: 2,
+    lore: 'Охлаждающая жидкость проводит ток. Ток проводит Вектор.',
+    groups: [
+      { type: ET.ArcDrone, count: 3, at: 0.5, every: 0.8, place: 'ring' },
+      { type: ET.Stamper, count: 1, at: 8, every: 0, place: 'far' },
+      { type: ET.GearMite, count: 6, at: 12, every: 0.3, place: 'lanes' },
+      { type: ET.ArcDrone, count: 2, at: 18, every: 0.8, place: 'ring' },
+    ],
+    mutator: 'flood',
+  },
+  {
+    name: 'Полная линия',
+    act: 2,
+    lore: 'Первый пресс строили под старый корпус. Корпус всё ещё в направляющей.',
+    groups: [
+      { type: ET.Hauler, count: 1, at: 0.5, every: 0, place: 'far' },
+      { type: ET.Skiff, count: 1, at: 1, every: 0, place: 'edge' },
+      { type: ET.ArcDrone, count: 2, at: 12, every: 0.8, place: 'ring' },
+      { type: ET.Overseer, count: 1, at: 16, every: 0, place: 'far' },
+      { type: ET.GearMite, count: 8, at: 20, every: 0.25, place: 'lanes' },
+      { type: ET.Hauler, count: 1, at: 24, every: 0, place: 'far' },
+    ],
+    mutator: 'reverse',
+  },
+  {
+    name: 'ПРЕСС',
+    act: 2,
+    lore: 'Гидравлика помнит каждый корпус, который сплющила.',
+    groups: [
+      { type: ET.Press, count: 1, at: 1.5, every: 0, place: 'far' },
+      { type: ET.GearMite, count: 6, at: 8, every: 0.4, place: 'lanes' },
+    ],
+    mutator: 'magnetic',
+    boss: true,
+  },
+  {
+    name: 'СБОРЩИК',
+    act: 2,
+    lore: 'Сборка 9.3. Компоненты: Вектор (устаревший).',
+    groups: [{ type: ET.Assembler, count: 1, at: 2, every: 0, place: 'random' }],
+    boss: true,
+  },
 ];
 
-export const ACT_NAMES = ['КАРАНТИН', 'ПЛОТЬ'] as const;
+export const ACT_NAMES = ['КАРАНТИН', 'ПЛОТЬ', 'ЛИТЕЙНЫЙ ЦЕХ'] as const;
 /** index of wave i within its act, and act length */
 export function actWave(i: number): { act: number; n: number; total: number } {
   const act = WAVES[i]?.act ?? 0;

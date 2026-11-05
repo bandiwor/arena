@@ -1,11 +1,13 @@
 import { Ev } from '../../core/events';
 import { angDiff, dcos, dsin, datan2, segDist2 } from '../../core/detmath';
-import { AS, ARENA_HH, ARENA_HW, Btn, DT, Team, WP } from '../constants';
+import { AS, ARENA_HH, ARENA_HW, Btn, DT, Mat, Team, WP } from '../constants';
 import { weaponDef } from '../content/weapons';
 import { cmdSlot, type InputCmd } from '../input';
 import type { World } from '../world';
 import { damageEnemy, spawnBullet } from './entities';
 import { collidePillars, pushOut } from './physics';
+import { shortEnemy } from './foundry';
+import { enemyDef } from '../content/enemies';
 
 const BASE_SPEED = 9.5;
 export const MUZZLE_FWD = 1.3;
@@ -78,16 +80,34 @@ export function updatePlayer(w: World, cmd: InputCmd): void {
     p.dashY = dy;
     w.events.push(Ev.PlayerDash, p.x, p.y, datan2(dy, dx));
   }
+  // Clamp Hauler hook: reeled toward the hauler until the hook lets go — a dash snaps the cable
+  if (p.pullT > 0) {
+    const E = w.enemies;
+    const h = p.pullBy;
+    if (p.dashT > 0 || h < 0 || !E.alive[h] || E.gen[h] !== p.pullGen) p.pullT = 0;
+    else {
+      p.pullT -= DT;
+      const dx = E.x[h]! - p.x;
+      const dy = E.y[h]! - p.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > E.r[h]! + p.r + 0.4) {
+        p.vx = (dx / d) * 14;
+        p.vy = (dy / d) * 14;
+      } else p.pullT = 0;
+    }
+  }
   if (p.dashT > 0) {
     p.dashT -= DT;
     p.vx = p.dashX * DASH_SPEED;
     p.vy = p.dashY * DASH_SPEED;
     if (p.stats.dashShock > 0) dashShock(w);
+  } else if (p.pullT > 0) {
+    // reeled: no steering
   } else {
     let speed = BASE_SPEED * p.stats.speedMul * w.phys.playerSpeed;
     // flesh pools drag at the player's feet
     const PL = w.pools;
-    for (let k = 0; k < PL.count; k++) {
+    for (let k = 0; k < (w.act === 1 ? PL.count : 0); k++) {
       const dx = p.x - PL.x[k]!;
       const dy = p.y - PL.y[k]!;
       if (dx * dx + dy * dy < PL.r[k]! * PL.r[k]!) {
@@ -173,7 +193,7 @@ function fire(w: World): void {
   w.events.push(Ev.Shoot, mx, my, aim, wd.id, wd.rarity, Team.Player);
   const dmgBase = wd.dmg * S.dmgMul;
   if (wd.kind === -1) {
-    fireRail(w, mx, my, aim, dmgBase, wd.rarity, wd.knock);
+    fireRail(w, mx, my, aim, dmgBase, wd.rarity, wd.knock, wd.id === WP.ArcRail ? 3 : 999, wd.id);
     return;
   }
   const count = wd.count + (wd.id === WP.Singularity ? 0 : S.projAdd);
@@ -213,7 +233,7 @@ const railHits = new Int32Array(128);
 const railT = new Float32Array(128);
 
 /** Hitscan rail: pierces every enemy on the line until it hits a wall/pillar. */
-function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity: number, knock: number): void {
+function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity: number, knock: number, maxHits: number, weapon: number): void {
   const dx = dcos(a);
   const dy = dsin(a);
   // ray vs arena bounds
@@ -266,12 +286,24 @@ function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity
     railHits[j + 1] = hi;
     railT[j + 1] = ht;
   }
+  // the arc rail stops in its 3rd target and shorts every machine it passes through
+  let bx = ex;
+  let by = ey;
+  if (n > maxHits) {
+    const last = railHits[maxHits - 1]!;
+    const tl = (w.enemies.x[last]! - x) * dx + (w.enemies.y[last]! - y) * dy;
+    bx = x + dx * tl;
+    by = y + dy * tl;
+    n = maxHits;
+  }
   for (let k = 0; k < n; k++) {
     const crit = w.rng.chance(w.player.stats.crit);
-    damageEnemy(w, railHits[k]!, crit ? dmg * 2.5 : dmg, a, knock, rarity, WP.Rail, crit);
+    const e = railHits[k]!;
+    if (weapon === WP.ArcRail && enemyDef(w.enemies.type[e]!).material === Mat.Machine) shortEnemy(w, e, 1.0);
+    damageEnemy(w, e, crit ? dmg * 2.5 : dmg, a, knock, rarity, weapon, crit);
   }
-  w.events.push(Ev.RailBeam, x, y, ex, ey, rarity, n);
-  w.events.push(Ev.Impact, ex, ey, a + Math.PI, -1, Team.Player);
+  w.events.push(Ev.RailBeam, x, y, bx, by, rarity, n, weapon);
+  w.events.push(Ev.Impact, bx, by, a + Math.PI, -1, Team.Player);
 }
 
 /** small util for AI */

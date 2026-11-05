@@ -34,6 +34,16 @@ ENEMIES.push(
   { type: ET.Worm, key: 'worm', name: 'Червь', hp: 34, r: 0.6, speed: 3, accel: 20, mass: 1.4, material: Mat.Flesh, contactDmg: 10, score: 30, spawnTime: 0.9, drop: 0.08, height: 1.0 },
   { type: ET.Parasite, key: 'parasite', name: 'Паразит', hp: 16, r: 0.36, speed: 7.5, accel: 40, mass: 0.4, material: Mat.Flesh, contactDmg: 7, score: 20, spawnTime: 0.7, drop: 0.04, height: 0.55 },
   { type: ET.Brood, key: 'brood', name: 'МАТКА', hp: 1900, r: 2.3, speed: 0, accel: 4, mass: 80, material: Mat.Flesh, contactDmg: 25, score: 800, spawnTime: 2.2, drop: 0, height: 3.4 },
+  // ─────────────── Акт III · ЛИТЕЙНЫЙ ЦЕХ (all machines)
+  { type: ET.GearMite, key: 'mite', name: 'Шестерёнка-клещ', hp: 8, r: 0.4, speed: 7.5, accel: 40, mass: 0.5, material: Mat.Machine, contactDmg: 10, score: 8, spawnTime: 0.6, drop: 0.03, height: 0.6 },
+  { type: ET.Stamper, key: 'stamper', name: 'Штамповщик', hp: 90, r: 0.9, speed: 2.0, accel: 10, mass: 4, material: Mat.Machine, contactDmg: 10, score: 40, spawnTime: 1.0, drop: 0.15, height: 1.9 },
+  { type: ET.ArcDrone, key: 'arcdrone', name: 'Дуговой дрон', hp: 25, r: 0.45, speed: 4.0, accel: 20, mass: 0.6, material: Mat.Machine, contactDmg: 6, score: 25, spawnTime: 0.8, drop: 0.08, height: 1.3 },
+  { type: ET.Hauler, key: 'hauler', name: 'Зажимщик', hp: 110, r: 0.8, speed: 3.5, accel: 14, mass: 3, material: Mat.Machine, contactDmg: 10, score: 45, spawnTime: 1.0, drop: 0.15, height: 1.6 },
+  { type: ET.Skiff, key: 'skiff', name: 'Пильный скиф', hp: 60, r: 0.6, speed: 6.0, accel: 30, mass: 1.5, material: Mat.Machine, contactDmg: 12, score: 35, spawnTime: 0.8, drop: 0.1, height: 0.7 },
+  { type: ET.Overseer, key: 'overseer', name: 'Надзиратель', hp: 120, r: 0.8, speed: 2.5, accel: 12, mass: 3, material: Mat.Machine, contactDmg: 0, score: 60, spawnTime: 1.0, drop: 0.25, height: 2.6 },
+  { type: ET.Press, key: 'press', name: 'ПРЕСС', hp: 1600, r: 2.2, speed: 3.5, accel: 8, mass: 60, material: Mat.Machine, contactDmg: 0, score: 800, spawnTime: 2.0, drop: 0, height: 4.5 },
+  { type: ET.Assembler, key: 'assembler', name: 'СБОРЩИК', hp: 3000, r: 2.4, speed: 0, accel: 4, mass: 100, material: Mat.Machine, contactDmg: 25, score: 2000, spawnTime: 2.5, drop: 0, height: 4 },
+  { type: ET.Arm, key: 'arm', name: 'Манипулятор', hp: 300, r: 1.1, speed: 0, accel: 4, mass: 100, material: Mat.Machine, contactDmg: 15, score: 150, spawnTime: 1.6, drop: 0.3, height: 2.4 },
 );
 ENEMIES.forEach((e, i) => {
   if (e.type !== i) throw new Error('enemy table order mismatch');

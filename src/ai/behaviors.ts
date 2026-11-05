@@ -1,9 +1,10 @@
 import { Ev } from '../core/events';
-import { dcos, dsin, datan2 } from '../core/detmath';
+import { dcos, dsin, datan2, segDist2 } from '../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
 import { acquireToken, hurtPlayer, killEnemy, releaseToken, SHIELD_HP, spawnBullet, spawnEnemy } from '../sim/systems/entities';
 import { hasLOS } from '../sim/systems/physics';
+import { arcFrom } from '../sim/systems/foundry';
 import type { World } from '../sim/world';
 import { angleToPlayer, dir, distToPlayer, faceToward, integrate, pathTo } from './steer';
 import { updateBoss } from './boss';
@@ -126,6 +127,15 @@ export function updateEnemies(w: World): void {
       integrate(w, i, 0, 0);
       continue;
     }
+    if (E.haste[i]! > 0) E.haste[i] = E.haste[i]! - DT;
+    // shorted by electricity: machines lock up completely, everything else just can't act
+    if (E.shortT[i]! > 0) {
+      E.shortT[i] = E.shortT[i]! - DT;
+      E.vx[i] = E.vx[i]! * 0.85;
+      E.vy[i] = E.vy[i]! * 0.85;
+      integrate(w, i, 0, 0);
+      continue;
+    }
     switch (E.type[i]) {
       case ET.Swarmer:
         swarmer(w, i);
@@ -160,6 +170,33 @@ export function updateEnemies(w: World): void {
       case ET.Brood:
         brood(w, i);
         break;
+      case ET.GearMite:
+        gearMite(w, i);
+        break;
+      case ET.Stamper:
+        stamper(w, i);
+        break;
+      case ET.ArcDrone:
+        arcDrone(w, i);
+        break;
+      case ET.Hauler:
+        hauler(w, i);
+        break;
+      case ET.Skiff:
+        skiff(w, i);
+        break;
+      case ET.Overseer:
+        overseer(w, i);
+        break;
+      case ET.Press:
+        press(w, i);
+        break;
+      case ET.Assembler:
+        assembler(w, i);
+        break;
+      case ET.Arm:
+        integrate(w, i, 0, 0);
+        break;
     }
     contact(w, i);
     // safety net: nothing may ever leave the arena (an unreachable enemy would stall the wave)
@@ -172,7 +209,8 @@ export function updateEnemies(w: World): void {
 }
 
 function speedOf(w: World, i: number): number {
-  return enemyDef(w.enemies.type[i]!).speed * w.enemies.speedMul[i]! * w.phys.enemySpeed * (w.enemies.buff[i]! > 0 ? 1.3 : 1);
+  const E = w.enemies;
+  return enemyDef(E.type[i]!).speed * E.speedMul[i]! * w.phys.enemySpeed * (E.buff[i]! > 0 ? 1.3 : 1) * (E.haste[i]! > 0 ? 1.1 : 1);
 }
 
 function contact(w: World, i: number): void {
@@ -184,6 +222,7 @@ function contact(w: World, i: number): void {
   const rr = E.r[i]! + p.r * 0.8;
   if (dx * dx + dy * dy < rr * rr) {
     let dmg = enemyDef(E.type[i]!).contactDmg;
+    if (dmg <= 0) return;
     if (E.st[i] === AS.Dash || E.st[i] === AS.Leap) dmg *= 1.3;
     hurtPlayer(w, dmg, E.x[i]!, E.y[i]!, E.type[i]!);
   }
@@ -923,3 +962,719 @@ function brood(w: World, i: number): void {
     }
   } else if (E.cd[i]! <= 0) setState(w, i, AS.Windup);
 }
+
+// ═════════════════════════════ Акт III · ЛИТЕЙНЫЙ ЦЕХ ═════════════════════════════
+
+/** bounce off arena walls and pillars; returns true when a bounce happened (velocity reflected) */
+function bounceMove(w: World, i: number, speed: number): boolean {
+  const E = w.enemies;
+  const r = E.r[i]!;
+  let nx = E.x[i]! + E.vx[i]! * DT;
+  let ny = E.y[i]! + E.vy[i]! * DT;
+  let bounced = false;
+  if (nx < -ARENA_HW + r || nx > ARENA_HW - r) {
+    E.vx[i] = -E.vx[i]!;
+    nx = Math.max(-ARENA_HW + r, Math.min(ARENA_HW - r, nx));
+    bounced = true;
+  }
+  if (ny < -ARENA_HH + r || ny > ARENA_HH - r) {
+    E.vy[i] = -E.vy[i]!;
+    ny = Math.max(-ARENA_HH + r, Math.min(ARENA_HH - r, ny));
+    bounced = true;
+  }
+  const P = w.pillars;
+  for (let k = 0; k < P.count; k++) {
+    const dx = nx - P.x[k]!;
+    const dy = ny - P.y[k]!;
+    const rr = P.r[k]! + r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < rr * rr) {
+      const d = Math.sqrt(d2) || 0.001;
+      const ux = dx / d;
+      const uy = dy / d;
+      const dot = E.vx[i]! * ux + E.vy[i]! * uy;
+      E.vx[i] = E.vx[i]! - 2 * dot * ux;
+      E.vy[i] = E.vy[i]! - 2 * dot * uy;
+      nx = P.x[k]! + ux * (rr + 0.01);
+      ny = P.y[k]! + uy * (rr + 0.01);
+      bounced = true;
+    }
+  }
+  // keep the speed exact after reflections
+  const v = Math.sqrt(E.vx[i]! * E.vx[i]! + E.vy[i]! * E.vy[i]!) || 1;
+  E.vx[i] = (E.vx[i]! / v) * speed;
+  E.vy[i] = (E.vy[i]! / v) * speed;
+  E.x[i] = nx;
+  E.y[i] = ny;
+  E.face[i] = datan2(E.vy[i]!, E.vx[i]!);
+  E.walk[i] = E.walk[i]! + speed * DT * 2.2;
+  return bounced;
+}
+
+// ───────────────────────────── Gear Mite: idle → spin-up → roll (≤3 bounces) → dizzy
+function gearMite(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  switch (E.st[i]) {
+    case AS.Windup: {
+      // spin-up: lock a straight roll line at the player's predicted position
+      const L = leadAim(w, E.x[i]!, E.y[i]!, 11, 0.5);
+      faceToward(w, i, datan2(L[1]! - E.y[i]!, L[0]! - E.x[i]!), 8);
+      E.charge[i] = Math.min(1, E.stT[i]! / tel(w, 0.6));
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= tel(w, 0.6)) {
+        E.aim[i] = E.face[i]!;
+        const v = 11 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+        E.vx[i] = dcos(E.aim[i]!) * v;
+        E.vy[i] = dsin(E.aim[i]!) * v;
+        E.burst[i] = 0;
+        E.charge[i] = 1;
+        setState(w, i, AS.Dash);
+      }
+      return;
+    }
+    case AS.Dash: {
+      const v = 11 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+      if (bounceMove(w, i, v)) E.burst[i] = E.burst[i]! + 1;
+      if (E.burst[i]! >= 3 || E.stT[i]! >= 2.5) {
+        E.charge[i] = 0;
+        E.vx[i] = E.vx[i]! * 0.2;
+        E.vy[i] = E.vy[i]! * 0.2;
+        setState(w, i, AS.Stunned); // dizzy: +25% damage taken
+      }
+      return;
+    }
+    case AS.Stunned:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 1.2) {
+        E.aux[i] = w.rng.range(0.5, 1.5);
+        setState(w, i, AS.Move);
+      }
+      return;
+    default: {
+      // idle: shuffle toward the player
+      if (E.aux[i]! <= 0) E.aux[i] = w.rng.range(0.5, 1.5);
+      const dv = pathTo(w, i, p.x, p.y, true);
+      integrate(w, i, dv[0]! * 1.5, dv[1]! * 1.5);
+      faceToward(w, i, angleToPlayer(w, i), 6);
+      if (E.stT[i]! >= E.aux[i]!) {
+        E.aux[i] = 0;
+        setState(w, i, AS.Windup);
+      }
+    }
+  }
+}
+
+// ───────────────────────────── Stamper: walk → mark ×3 (predicted) → stamp → recover
+function stamper(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const noMarks = E.aux2[i] === 99; // ASSEMBLER self-assembly walker
+  const MARK = tel(w, 2.2);
+  switch (E.st[i]) {
+    case AS.Windup: {
+      integrate(w, i, 0, 0);
+      E.charge[i] = Math.min(1, E.stT[i]! / MARK);
+      // drop marks at 0, 1/3, 2/3 of the wind-up; all go hot together at STAMP
+      // (E.burst counts marks already placed — robust to the first-tick offset)
+      if (E.stT[i]! <= DT * 1.01) E.burst[i] = 0;
+      while (E.burst[i]! < 3) {
+        const k = E.burst[i]!;
+        const at = (k / 3) * MARK * 0.95;
+        if (E.stT[i]! - DT < at - 1e-9) break;
+        E.burst[i] = k + 1;
+        {
+          let mx = p.x + p.vx * 0.8;
+          let my = p.y + p.vy * 0.8;
+          if (p.dashT > 0) {
+            // never land a mark on a dashing player: shove it off their line
+            mx += -p.dashY * 2.2;
+            my += p.dashX * 2.2;
+          }
+          mx = clampX(mx);
+          my = clampY(my);
+          w.marks.add(mx, my, 1.5, MARK - at, 0.4, 35, ET.Stamper);
+        }
+      }
+      if (E.stT[i]! >= MARK) setState(w, i, AS.Attack);
+      return;
+    }
+    case AS.Attack:
+      integrate(w, i, 0, 0);
+      E.charge[i] = 1;
+      if (E.stT[i]! >= 0.4) {
+        E.charge[i] = 0;
+        releaseToken(w, i);
+        E.cd[i] = 2.6 * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    case AS.Recover:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 1.6) setState(w, i, AS.Move);
+      return;
+    default: {
+      const sp = speedOf(w, i);
+      const dv = pathTo(w, i, p.x, p.y, true);
+      faceToward(w, i, datan2(dv[1]!, dv[0]!), 1.05); // 60°/s
+      integrate(w, i, dcos(E.face[i]!) * sp, dsin(E.face[i]!) * sp);
+      if (!noMarks && E.think[i]! <= 0) {
+        E.think[i] = 0.3;
+        const d = distToPlayer(w, i);
+        if (d < 13 && E.cd[i]! <= 0 && acquireToken(w, i)) setState(w, i, AS.Windup);
+      }
+    }
+  }
+}
+
+// ───────────────────────────── Arc Drone: hover → charge (locks a target point) → arc → cool
+function arcDrone(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const d = distToPlayer(w, i);
+  const CH = tel(w, 1.0);
+  switch (E.st[i]) {
+    case AS.Windup: {
+      E.charge[i] = Math.min(1, E.stT[i]! / CH);
+      integrate(w, i, 0, 0);
+      // tracks the player until 75% of the charge, then the bolt's end point is locked
+      if (E.stT[i]! < CH * 0.75) {
+        E.tx[i] = p.x;
+        E.ty[i] = p.y;
+        faceToward(w, i, angleToPlayer(w, i), 6);
+      }
+      if (E.stT[i]! >= CH) {
+        // ARC: instant bolt to the locked point (max 9 u); if it lands in coolant, the pool is live
+        const dx = E.tx[i]! - E.x[i]!;
+        const dy = E.ty[i]! - E.y[i]!;
+        const l = Math.sqrt(dx * dx + dy * dy) || 1;
+        const reach = Math.min(9, l);
+        const ex = E.x[i]! + (dx / l) * reach;
+        const ey = E.y[i]! + (dy / l) * reach;
+        const hit = p.alive && segDist2(p.x, p.y, E.x[i]!, E.y[i]!, ex, ey) < 0.7 * 0.7;
+        w.events.push(Ev.Arc, E.x[i]!, E.y[i]!, ex, ey, hit ? 1 : 0);
+        if (hit) hurtPlayer(w, 12, E.x[i]!, E.y[i]!, ET.ArcDrone);
+        if (w.pools.at(ex, ey) >= 0) arcFrom(w, ex, ey, 4, 1, 12, true);
+        E.charge[i] = 0;
+        releaseToken(w, i);
+        E.cd[i] = 2.0 * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Recover:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 0.3) setState(w, i, AS.Move);
+      return;
+    default: {
+      // hover at ~6 u, orbiting
+      const sp = speedOf(w, i);
+      const rx = (p.x - E.x[i]!) / (d || 1);
+      const ry = (p.y - E.y[i]!) / (d || 1);
+      const s = E.aux2[i]!;
+      const radial = Math.max(-1, Math.min(1, (d - 6) * 0.4));
+      integrate(w, i, (-ry * s + rx * radial) * sp, (rx * s + ry * radial) * sp);
+      faceToward(w, i, angleToPlayer(w, i), 5);
+      if (E.think[i]! <= 0) {
+        E.think[i] = 0.25;
+        if (d < 10 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y) && acquireToken(w, i)) setState(w, i, AS.Windup);
+      }
+    }
+  }
+}
+
+// ───────────────────────────── Clamp Hauler: stalk → aim → hook (pull) → reel
+function hauler(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const d = distToPlayer(w, i);
+  const AIM = tel(w, 1.0);
+  switch (E.st[i]) {
+    case AS.Windup:
+      E.charge[i] = Math.min(1, E.stT[i]! / AIM);
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! < AIM * 0.8) {
+        faceToward(w, i, angleToPlayer(w, i), 4);
+        E.aim[i] = E.face[i]!;
+      }
+      if (E.stT[i]! >= AIM) {
+        E.aux[i] = 0; // hook distance
+        w.events.push(Ev.HookFire, E.x[i]!, E.y[i]!, E.aim[i]!);
+        setState(w, i, AS.Attack);
+      }
+      return;
+    case AS.Attack: {
+      integrate(w, i, 0, 0);
+      E.aux[i] = E.aux[i]! + 18 * DT;
+      const a = E.aim[i]!;
+      const hx = E.x[i]! + dcos(a) * E.aux[i]!;
+      const hy = E.y[i]! + dsin(a) * E.aux[i]!;
+      const dx = p.x - hx;
+      const dy = p.y - hy;
+      if (p.alive && p.dashT <= 0 && dx * dx + dy * dy < 0.85 * 0.85) {
+        hurtPlayer(w, 15, hx, hy, ET.Hauler);
+        p.pullT = 0.5;
+        p.pullBy = i;
+        p.pullGen = E.gen[i]!;
+        w.events.push(Ev.HookHit, hx, hy);
+        E.charge[i] = 0;
+        setState(w, i, AS.Recover);
+      } else if (E.aux[i]! >= 9) {
+        E.charge[i] = 0;
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Recover:
+      // reel: hook retracts at half speed, body exposed (+30%)
+      integrate(w, i, 0, 0);
+      E.aux[i] = Math.max(0, E.aux[i]! - 9 * DT);
+      if (E.stT[i]! >= 1.2) {
+        releaseToken(w, i);
+        E.cd[i] = 3 * cdMul(w);
+        E.aux[i] = 0;
+        setState(w, i, AS.Move);
+      }
+      return;
+    default: {
+      // stalk at 9–12 u
+      const sp = speedOf(w, i);
+      const rx = (p.x - E.x[i]!) / (d || 1);
+      const ry = (p.y - E.y[i]!) / (d || 1);
+      const radial = d < 9 ? -0.8 : d > 12 ? 0.8 : 0;
+      const s = E.aux2[i]!;
+      if (d > 14 || !hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y)) {
+        const dv = pathTo(w, i, p.x, p.y, true);
+        integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+      } else integrate(w, i, (rx * radial - ry * s * 0.6) * sp, (ry * radial + rx * s * 0.6) * sp);
+      faceToward(w, i, angleToPlayer(w, i), 3);
+      if (E.think[i]! <= 0) {
+        E.think[i] = 0.3;
+        if (d > 5 && d < 10.5 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y) && acquireToken(w, i)) setState(w, i, AS.Windup);
+      }
+    }
+  }
+}
+
+// ───────────────────────────── Sawblade Skiff: cruise (homing turn 45°/s, burning track) → drift
+function skiff(w: World, i: number): void {
+  const E = w.enemies;
+  if (E.st[i] === AS.Stunned) {
+    // drift: slow, exposed (+20%)
+    const v = 2;
+    if (Math.abs(E.vx[i]!) + Math.abs(E.vy[i]!) < 0.01) {
+      E.vx[i] = dcos(E.face[i]!);
+      E.vy[i] = dsin(E.face[i]!);
+    }
+    bounceMove(w, i, v);
+    if (E.stT[i]! >= 1.5) {
+      E.burst[i] = 0;
+      setState(w, i, AS.Move);
+    }
+    return;
+  }
+  // cruise
+  const v = speedOf(w, i);
+  faceToward(w, i, angleToPlayer(w, i), 0.785);
+  E.vx[i] = dcos(E.face[i]!) * v;
+  E.vy[i] = dsin(E.face[i]!) * v;
+  if (bounceMove(w, i, v)) E.burst[i] = E.burst[i]! + 1;
+  // drop a track segment every 0.25 s
+  E.aux[i] = E.aux[i]! + DT;
+  if (E.aux[i]! >= 0.25) {
+    E.aux[i] = 0;
+    if (E.stT[i]! > 0.3) w.tracks.add(E.tx[i]!, E.ty[i]!, E.x[i]!, E.y[i]!);
+    E.tx[i] = E.x[i]!;
+    E.ty[i] = E.y[i]!;
+  }
+  if (E.burst[i]! >= 4 || E.stT[i]! > 6) setState(w, i, AS.Stunned);
+}
+
+// ───────────────────────────── Overseer: patrol far → pulse (reverse nearby lanes) → tighten mites
+function overseer(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const d = distToPlayer(w, i);
+  // exposed once after losing 40% HP
+  if (E.st[i] !== AS.Guard && E.aux2[i] !== 77 && E.dmgTaken[i]! >= E.maxHp[i]! * 0.4) {
+    E.aux2[i] = 77;
+    E.charge[i] = 0;
+    setState(w, i, AS.Guard);
+  }
+  switch (E.st[i]) {
+    case AS.Guard:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 2) setState(w, i, AS.Move);
+      return;
+    case AS.Windup: {
+      E.charge[i] = Math.min(1, E.stT[i]! / 0.8);
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 0.8) {
+        const L = w.lanes;
+        const period = w.phys.lanePeriod;
+        for (let k = 0; k < L.count; k++) {
+          const dx = L.cx[k]! - E.x[i]!;
+          const dy = L.cy[k]! - E.y[i]!;
+          if (dx * dx + dy * dy > 12 * 12 || L.frozen[k]! > 0) continue;
+          if (L.t[k]! < period - 1.0) L.t[k] = period - 1.0; // shortened warning
+          w.events.push(Ev.LaneWarn, k);
+        }
+        E.charge[i] = 0;
+        setState(w, i, AS.Attack);
+      }
+      return;
+    }
+    case AS.Attack:
+      // tighten: nearby mites spin faster for 4 s
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! < DT * 1.5) {
+        for (let k = 0; k < E.hi; k++) {
+          if (!E.alive[k] || E.type[k] !== ET.GearMite) continue;
+          const dx = E.x[k]! - E.x[i]!;
+          const dy = E.y[k]! - E.y[i]!;
+          if (dx * dx + dy * dy < 64) E.haste[k] = 4;
+        }
+      }
+      if (E.stT[i]! >= 1) {
+        E.aux[i] = 0;
+        setState(w, i, AS.Move);
+      }
+      return;
+    default: {
+      const sp = speedOf(w, i);
+      const rx = (p.x - E.x[i]!) / (d || 1);
+      const ry = (p.y - E.y[i]!) / (d || 1);
+      const radial = d < 10 ? -1 : d > 15 ? 0.6 : 0;
+      integrate(w, i, (rx * radial - ry * E.aux2[i]! * 0.5) * sp, (ry * radial + rx * E.aux2[i]! * 0.5) * sp);
+      faceToward(w, i, angleToPlayer(w, i), 2);
+      E.aux[i] = E.aux[i]! + DT;
+      if (E.aux[i]! >= 6 * cdMul(w)) setState(w, i, AS.Windup);
+    }
+  }
+}
+
+// ───────────────────────────── PRESS (mini-boss): stamp grid & sweeps → lane control → crush
+const PRESS_PAT = { drop: 1, sweep: 2, lanes: 3, chain: 4, slam: 5, crush: 6, run: 7 } as const;
+function press(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  const hpf = E.hp[i]! / E.maxHp[i]!;
+  const phase = hpf > 0.66 ? 1 : hpf > 0.33 ? 2 : 3;
+  if (phase !== E.burst[i]) {
+    if (E.burst[i]! > 0) w.events.push(Ev.BossPhase, E.x[i]!, E.y[i]!, phase);
+    E.burst[i] = phase;
+    E.aux[i] = 0;
+    E.cd[i] = 1.2;
+  }
+  const tg = (base: number): number => tel(w, base) - 0.2 * (phase - 1);
+  const pat = E.aux[i]!;
+  // hover north of the player (the gantry slides along its rail)
+  if (pat !== PRESS_PAT.crush && pat !== PRESS_PAT.sweep) {
+    const tx = clampX(p.x);
+    const ty = clampY(Math.max(-ARENA_HH + 4, p.y - 9));
+    const dx = tx - E.x[i]!;
+    const dy = ty - E.y[i]!;
+    const dd = Math.sqrt(dx * dx + dy * dy);
+    const sp = speedOf(w, i) * (phase === 3 ? 1.4 : 1);
+    integrate(w, i, dd > 0.5 ? (dx / dd) * sp : 0, dd > 0.5 ? (dy / dd) * sp : 0);
+  }
+  faceToward(w, i, angleToPlayer(w, i), 1);
+  if (pat === 0) {
+    if (E.cd[i]! > 0) return; // cd ticks in updateEnemies
+    const opts = phase === 1 ? [PRESS_PAT.drop, PRESS_PAT.sweep] : phase === 2 ? [PRESS_PAT.lanes, PRESS_PAT.chain, PRESS_PAT.slam, PRESS_PAT.drop] : [PRESS_PAT.crush, PRESS_PAT.run, PRESS_PAT.drop];
+    E.aux[i] = opts[w.rng.int(opts.length)]!;
+    E.stT[i] = 0;
+    E.tx[i] = 0;
+    E.ty[i] = 0;
+    return;
+  }
+  // time since the pattern started (stT already advanced once on the first tick)
+  const t = E.stT[i]! - DT;
+  const once = (at: number): boolean => t >= at && t - DT < at;
+  switch (pat) {
+    case PRESS_PAT.drop: {
+      // 3×3 grid of 2×2 stamps around the player, one row left safe
+      if (once(0)) {
+        const safe = w.rng.int(3);
+        const cx = clampX(p.x);
+        const cy = clampY(p.y);
+        const f = Math.max(0.8, tg(1.4));
+        for (let r = 0; r < 3; r++) {
+          if (r === safe) continue;
+          for (let c = 0; c < 3 + (phase - 1); c++) w.marks.add(clampX(cx + (c - 1) * 2.6), clampY(cy + (r - 1) * 2.6), 1, f, 0.5, 35, ET.Press, true);
+        }
+        w.events.push(Ev.EnemyShoot, E.x[i]!, E.y[i]!, 0, ET.Press, 0);
+      }
+      if (t >= 2) endPattern(w, i, 0.8);
+      return;
+    }
+    case PRESS_PAT.sweep: {
+      // the gantry crosses the arena at the player's row, stamping behind itself
+      const lead = Math.max(0.6, tg(1.0));
+      if (once(0)) {
+        E.ty[i] = clampY(p.y);
+        E.tx[i] = p.x > 0 ? -ARENA_HW + 3 : ARENA_HW - 3; // start on the far side
+        w.events.push(Ev.Telegraph, 0, E.ty[i]!, 0, lead);
+      }
+      const dir = E.tx[i]! < 0 ? 1 : -1;
+      const x = E.tx[i]! + dir * Math.max(0, t - lead) * 6;
+      if (t < lead) {
+        // the gantry slides to the start of its run during the telegraph
+        const k = Math.min(1, DT * 7);
+        E.x[i] = E.x[i]! + (E.tx[i]! - E.x[i]!) * k;
+        E.y[i] = E.y[i]! + (E.ty[i]! - 1 - E.y[i]!) * k;
+      } else {
+        E.x[i] = x;
+        E.y[i] = E.ty[i]! - 1;
+      }
+      for (let k = 0; k < 40; k++) {
+        const mx = E.tx[i]! + dir * k * 2;
+        const at = lead + (k * 2) / 6;
+        if (once(at) && Math.abs(mx) < ARENA_HW - 1) w.marks.add(mx, E.ty[i]!, 1, 0.6, 0.3, 30, ET.Press, true);
+      }
+      if ((Math.abs(x) > ARENA_HW - 2 && t > lead + 1) || t > lead + 14) {
+        E.x[i] = clampX(E.x[i]!);
+        endPattern(w, i, 0.8);
+      }
+      return;
+    }
+    case PRESS_PAT.lanes: {
+      if (once(0)) {
+        // reverse the two lanes nearest the player (with the normal warning)
+        const L = w.lanes;
+        const period = w.phys.lanePeriod;
+        let a = -1;
+        let b = -1;
+        let da = 1e9;
+        let db = 1e9;
+        for (let k = 0; k < L.count; k++) {
+          const dx = L.cx[k]! - p.x;
+          const dy = L.cy[k]! - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < da) {
+            db = da;
+            b = a;
+            da = d2;
+            a = k;
+          } else if (d2 < db) {
+            db = d2;
+            b = k;
+          }
+        }
+        for (const k of [a, b]) {
+          if (k < 0) continue;
+          L.frozen[k] = 0;
+          L.t[k] = Math.max(L.t[k]!, period - 1.5);
+          w.events.push(Ev.LaneWarn, k);
+        }
+      }
+      if (t >= 1.6) endPattern(w, i, 0.5);
+      return;
+    }
+    case PRESS_PAT.chain: {
+      // coolant gushes from the press, then it discharges into every pool
+      if (once(0)) {
+        for (let k = 0; k < 2; k++) w.pools.add(clampX(E.x[i]! + (k ? 3 : -3)), clampY(E.y[i]! + 4), 2.5, 7);
+        w.events.push(Ev.PylonCharge, E.x[i]!, E.y[i]!);
+      }
+      const at = Math.max(0.8, tg(1.2));
+      if (once(at)) arcFrom(w, E.x[i]!, E.y[i]!, 30, 3, 14, true);
+      if (t >= at + 0.6) endPattern(w, i, 0.8);
+      return;
+    }
+    case PRESS_PAT.slam: {
+      // a lane is about to shunt 6 u in one tick: get off the belt
+      const at = Math.max(1.0, tg(1.5));
+      if (once(0)) {
+        const k = w.lanes.at(p.x, p.y);
+        let pick = k;
+        if (pick < 0) {
+          let bd = 1e9;
+          for (let j = 0; j < w.lanes.count; j++) {
+            const dx = w.lanes.cx[j]! - p.x;
+            const dy = w.lanes.cy[j]! - p.y;
+            if (dx * dx + dy * dy < bd) {
+              bd = dx * dx + dy * dy;
+              pick = j;
+            }
+          }
+        }
+        E.tx[i] = pick;
+        if (pick >= 0) w.events.push(Ev.Shunt, pick, at, 0);
+      }
+      E.charge[i] = Math.min(1, t / at);
+      if (once(at)) {
+        const k = E.tx[i]! | 0;
+        if (k >= 0 && k < w.lanes.count) {
+          const L = w.lanes;
+          if (p.alive && Math.abs(p.x - L.cx[k]!) < L.hw[k]! && Math.abs(p.y - L.cy[k]!) < L.hh[k]!) {
+            hurtPlayer(w, 20, L.cx[k]!, L.cy[k]!, ET.Press);
+            p.x = Math.max(-ARENA_HW + 0.6, Math.min(ARENA_HW - 0.6, p.x + L.dx[k]! * 6));
+            p.y = Math.max(-ARENA_HH + 0.6, Math.min(ARENA_HH - 0.6, p.y + L.dy[k]! * 6));
+          }
+          w.events.push(Ev.Shunt, k, 0, 1);
+        }
+        E.charge[i] = 0;
+      }
+      if (t >= at + 0.5) endPattern(w, i, 0.8);
+      return;
+    }
+    case PRESS_PAT.crush: {
+      // descends on the centre: 6×6 zone, corners are safe
+      const at = Math.max(1.4, tg(2.0));
+      if (once(0)) w.marks.add(0, 0, 3, at, 1.0, 40, ET.Press, true);
+      const k = Math.min(1, t / at);
+      E.x[i] = E.x[i]! + (0 - E.x[i]!) * Math.min(1, DT * 4);
+      E.y[i] = E.y[i]! + (0 - E.y[i]!) * Math.min(1, DT * 4);
+      E.charge[i] = k;
+      if (once(at)) w.events.push(Ev.Shockwave, 0, 0, 4);
+      if (t >= at + 1.2) {
+        E.charge[i] = 0;
+        endPattern(w, i, 0.8);
+      }
+      return;
+    }
+    case PRESS_PAT.run: {
+      // random walk, a stamp mark at the player's feet every second
+      for (let s = 0; s < 5; s++) if (once(s * 1.0)) w.marks.add(clampX(p.x + p.vx * 0.5), clampY(p.y + p.vy * 0.5), 1.6, 0.9, 0.3, 30, ET.Press);
+      if (t >= 5) endPattern(w, i, 1.0);
+      return;
+    }
+  }
+}
+
+function endPattern(w: World, i: number, gap: number): void {
+  const E = w.enemies;
+  E.aux[i] = 0;
+  E.cd[i] = gap;
+  E.charge[i] = 0;
+}
+
+// ───────────────────────────── ASSEMBLER (act boss): hub + 4 arms
+function assembler(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  integrate(w, i, 0, 0);
+  faceToward(w, i, angleToPlayer(w, i), 0.6);
+  // first tick: build the arms
+  if (E.aux2[i] !== 55) {
+    E.aux2[i] = 55;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) spawnEnemy(w, ET.Arm, E.x[i]! + sx * 10, E.y[i]! + sy * 7);
+    E.cd[i] = 2;
+    E.aux[i] = 0;
+    E.tx[i] = 0; // weld clock
+    E.ty[i] = 0; // forge clock
+  }
+  const hpf = E.hp[i]! / E.maxHp[i]!;
+  const phase = hpf > 0.7 ? 1 : hpf > 0.35 ? 2 : 3;
+  if (phase !== E.burst[i]) {
+    if (E.burst[i]! > 0) w.events.push(Ev.BossPhase, E.x[i]!, E.y[i]!, phase);
+    E.burst[i] = phase;
+  }
+  // shield / closed timer
+  if (E.shield[i]! > 0) {
+    E.shield[i] = E.shield[i]! - DT;
+    if (E.shield[i]! <= 0) w.events.push(Ev.HubShield, E.x[i]!, E.y[i]!, 0);
+  }
+  // phase 3: open 3 s / closed 4 s
+  if (phase === 3) {
+    E.charge[i] = E.charge[i]! + DT;
+    const cyc = E.charge[i]! % 7;
+    if (cyc >= 3 && E.shield[i]! <= 0) {
+      E.shield[i] = 7 - cyc;
+      w.events.push(Ev.HubShield, E.x[i]!, E.y[i]!, 1);
+    }
+  }
+  // live arms
+  let nArms = 0;
+  const arms = scratchArms;
+  for (let k = 0; k < E.hi && nArms < 4; k++) if (E.alive[k] && E.type[k] === ET.Arm && E.st[k] !== AS.Spawning) arms[nArms++] = k;
+  // production line (budgeted by the director's spirit: never flood the arena)
+  E.aux[i] = E.aux[i]! + DT;
+  if (E.aux[i]! >= 5 * cdMul(w) && nArms > 0 && E.count < 14) {
+    E.aux[i] = 0;
+    const a = arms[w.rng.int(nArms)]!;
+    if (w.rng.chance(0.5)) {
+      spawnEnemy(w, ET.GearMite, clampX(E.x[a]! + 1.5), clampY(E.y[a]! + 1.5));
+      spawnEnemy(w, ET.GearMite, clampX(E.x[a]! - 1.5), clampY(E.y[a]! + 1.5));
+    } else spawnEnemy(w, ET.ArcDrone, clampX(E.x[a]!), clampY(E.y[a]! + 2));
+    if (phase >= 2 && w.rng.chance(0.4)) spawnEnemy(w, ET.Hauler, clampX(E.x[a]! + 2), clampY(E.y[a]!));
+  }
+  // WELD: a static beam from an arm that is NOT the one next to the player
+  E.tx[i] = E.tx[i]! + DT;
+  if (E.tx[i]! >= 6 * cdMul(w) && nArms > 0) {
+    E.tx[i] = 0;
+    let near = -1;
+    let nd = 1e9;
+    for (let k = 0; k < nArms; k++) {
+      const a = arms[k]!;
+      const d2 = (E.x[a]! - p.x) ** 2 + (E.y[a]! - p.y) ** 2;
+      if (d2 < nd) {
+        nd = d2;
+        near = a;
+      }
+    }
+    let src = -1;
+    for (let k = 0; k < nArms; k++) if (arms[k] !== near || nArms === 1) src = arms[k]!;
+    const L = w.lasers;
+    for (let k = 0; k < L.alive.length; k++) {
+      if (L.alive[k] || src < 0) continue;
+      const tx = p.x + p.vx * 0.6;
+      const ty = p.y + p.vy * 0.6;
+      L.alive[k] = 1;
+      L.owner[k] = -1;
+      L.x[k] = E.x[src]!;
+      L.y[k] = E.y[src]!;
+      L.ang[k] = datan2(ty - L.y[k]!, tx - L.x[k]!);
+      L.angP[k] = L.ang[k]!;
+      L.angVel[k] = 0;
+      L.len[k] = 40;
+      L.width[k] = 0.45;
+      L.warm[k] = tel(w, 1.0);
+      L.warmMax[k] = L.warm[k]!;
+      L.life[k] = 0.8;
+      L.dmg[k] = 18;
+      break;
+    }
+  }
+  // FORGE: three rings, each with a ≥60° gap
+  E.ty[i] = E.ty[i]! + DT;
+  const forgeAt = 7 * cdMul(w);
+  const ft = E.ty[i]! - forgeAt;
+  if (ft >= 0) {
+    if (ft < DT) w.events.push(Ev.Telegraph, E.x[i]!, E.y[i]!, 3.5, tel(w, 1.5));
+    for (let r = 0; r < 3; r++) {
+      const at = tel(w, 1.5) + r * 0.45;
+      if (ft >= at && ft - DT < at) {
+        const gap = w.rng.range(0, 6.283);
+        const n = 22;
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * 6.283185 + r * 0.14;
+          let dg = a - gap;
+          dg = dg - 6.283185 * Math.floor((dg + 3.14159) / 6.283185);
+          if (Math.abs(dg) < 0.6) continue; // ~69° gap
+          const b = spawnBullet(w, Team.Enemy, BK.BossOrb, E.x[i]! + dcos(a) * 2.6, E.y[i]! + dsin(a) * 2.6, a, 5 * w.diff.bulletSpeedMul, 14, 0.42, 6, 0, 0, 0, 0, 0, 0);
+          if (b >= 0) w.bullets.h0[b] = 2;
+        }
+        w.events.push(Ev.EnemyShoot, E.x[i]!, E.y[i]!, 0, ET.Assembler, BK.BossOrb);
+      }
+    }
+    if (ft > tel(w, 1.5) + 1.5) E.ty[i] = 0;
+  }
+  // phase 3 extras: CONVEYOR (all lanes push inward) and SELF_ASSEMBLY (a mark-less walker)
+  if (phase === 3) {
+    if (E.cd[i]! <= 0) {
+      E.cd[i] = 9 * cdMul(w);
+      if (w.rng.chance(0.5)) {
+        for (let k = 0; k < w.lanes.count; k++) {
+          w.lanes.inward[k] = 4 + tel(w, 1.5);
+          w.events.push(Ev.LaneWarn, k);
+        }
+      } else {
+        const s = spawnEnemy(w, ET.Stamper, clampX(E.x[i]! + 3), clampY(E.y[i]! + 3));
+        if (s >= 0) E.aux2[s] = 99;
+      }
+    }
+  }
+}
+const scratchArms = new Int32Array(4);

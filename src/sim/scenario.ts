@@ -1,3 +1,4 @@
+import { WEAPONS } from './content/weapons';
 import { AS, ARENA_HH, ARENA_HW, Btn, ET, Team, type EnemyType } from './constants';
 import { enemyTypeByKey } from './content/enemies';
 import { mutatorByKey } from './content/mutators';
@@ -36,7 +37,7 @@ export class Scenario {
     if (o.weapons) {
       p.slotCount = 0;
       for (const k of o.weapons) {
-        const id = (WP as Record<string, number>)[k[0]!.toUpperCase() + k.slice(1)];
+        const id = WEAPONS.find((d) => d.key === k)?.id ?? (WP as Record<string, number>)[k[0]!.toUpperCase() + k.slice(1)];
         if (id === undefined) throw new Error(`unknown weapon ${k}`);
         p.slots[p.slotCount++] = id;
       }

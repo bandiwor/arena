@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
-  await p.goto('http://localhost:5173/?scene=transition');
+  await p.goto('http://localhost:5173/?scene=' + (process.env.SCENE || 'transition'));
   await p.waitForFunction(() => window.dbg, null, { timeout: 60000 });
   await p.evaluate(() => { document.querySelector('.dbg-panel').style.display = 'none'; });
   let i = 0;

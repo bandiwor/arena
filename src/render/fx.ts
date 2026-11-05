@@ -1,11 +1,13 @@
 import { Ev, EV_STRIDE } from '../core/events';
 import { Rng } from '../core/rng';
-import { AS, ARENA_HH, ARENA_HW, BK, ET, Mat, MAX_LASERS, Team, WP } from '../sim/constants';
+import { AS, ARENA_HH, ARENA_HW, BK, ET, Mat, MAX_LASERS, MAX_MARKS, MAX_TRACKS, Team, WP } from '../sim/constants';
+import { TRACK_ARM, TRACK_LIFE } from '../sim/systems/foundry';
 import { enemyDef } from '../sim/content/enemies';
 import { MUTATORS } from '../sim/content/mutators';
 import { weaponDef } from '../sim/content/weapons';
 import { WavePhase, type World } from '../sim/world';
 import { TRANS_SYNTH } from '../sim/systems/waves';
+import { WAVES } from '../sim/content/waves';
 import { SYNTH_SPEED } from './entities';
 import type { AudioEngine } from '../audio/audio';
 import type { SfxId } from '../audio/sfx';
@@ -65,6 +67,12 @@ const C_DUST = new Float32Array([0.035, 0.018, 0.02]);
 const K_WHITE = new Float32Array([3, 3, 3]);
 const C_OLD = new Float32Array(3);
 const C_CRYS = new Float32Array([1.2, 1.6, 3.6]);
+// Литейный цех
+const C_ARC = new Float32Array([1.5, 0.7, 3.8]);
+const C_AMBER = new Float32Array([3, 1.25, 0.12]);
+const C_SPARK = new Float32Array([3.2, 2.2, 0.8]);
+const C_STEAM = new Float32Array([0.05, 0.05, 0.06]);
+const C_METAL = new Float32Array([0.5, 0.52, 0.6]);
 const C_RARE = [new Float32Array(3), new Float32Array(3), new Float32Array(3), new Float32Array(3)] as const;
 lin(PAL.player, C_PLAYER);
 lin(PAL.enemy, C_ENEMY);
@@ -168,6 +176,16 @@ export class FxDirector {
   /** HUD hook */
   onEvent: ((type: number, d: Float32Array, o: number) => void) | null = null;
   private time = 0;
+  // PRESS shunt telegraph (lane about to slam)
+  private shuntK = -1;
+  private shuntT = 0;
+  private shuntMax = 1;
+  /** 1 near the listener, fading with distance (local impacts shouldn't shake the whole screen) */
+  private near(x: number, y: number): number {
+    const dx = x - this.listenerX;
+    const dy = y - this.listenerY;
+    return 1 / (1 + (dx * dx + dy * dy) / 120);
+  }
 
   constructor(private readonly d: FxDeps) {}
 
@@ -394,6 +412,13 @@ export class FxDirector {
         J.punch(0.35);
         J.stop(0.04);
         break;
+      case WP.ArcRail:
+        this.sfx('shoot_arcrail', x, y, 1);
+        J.addChroma(0.5);
+        J.addGlitch(0.2);
+        J.punch(0.3);
+        J.stop(0.03);
+        break;
       case WP.Singularity:
         this.sfx('shoot_sing', x, y, 1);
         J.addChroma(1);
@@ -582,7 +607,12 @@ export class FxDirector {
           const dy = b - y;
           const len = Math.sqrt(dx * dx + dy * dy);
           const ang = Math.atan2(dy, dx);
-          const col = C_RARE[2];
+          const arcRail = e === WP.ArcRail;
+          const col = arcRail ? C_ARC : C_RARE[2];
+          if (arcRail) {
+            for (let k = 0; k < 3; k++) this.timed(QK.Lightning, QM.Ground, (x + a) / 2, 0.75, (y + b) / 2, ang, len, 1.4 + k * 0.4, C_ARC, 2.5, 0.22 + k * 0.06);
+            this.burst(14, a, 0.75, b, ang, TAU, 3, 10, 3, 0.35, C_ARC, 2.5, 0.1, 4, 0, PS.Spark, 0);
+          }
           this.timed(QK.Beam, QM.Ground, (x + a) / 2, 0.75, (y + b) / 2, ang, len, 1.6, col, 3, 0.32);
           this.timed(QK.Beam, QM.Ground, (x + a) / 2, 0.75, (y + b) / 2, ang, len, 0.5, K5, 1, 0.12);
           for (let s = 0; s < len; s += 0.5) {
@@ -759,7 +789,8 @@ export class FxDirector {
           break;
         case Ev.ActSynth: {
           // the matter core detonates outward — the new sector is written into the world
-          J.doFlash(0.85, 1, 0.25, 0.35);
+          if (a === 2) J.doFlash(0.85, 1, 0.6, 0.15);
+          else J.doFlash(0.85, 1, 0.25, 0.35);
           J.addTrauma(1);
           J.addGlitch(1.2);
           J.addChroma(1.6);
@@ -768,11 +799,14 @@ export class FxDirector {
           this.wave(0, 0, 2.5);
           this.d.floor.ripple(0, 0, 3);
           this.d.floor.decals.clear();
-          this.timed(QK.Ring, QM.Ground, 0, 0.1, 0, 0, 90, 90, C_FLESH, 3, 1.4);
+          const foundry = a === 2;
+          const SC = foundry ? C_AMBER : C_FLESH;
+          this.timed(QK.Ring, QM.Ground, 0, 0.1, 0, 0, 90, 90, SC, 3, 1.4);
           this.timed(QK.Ring, QM.Ground, 0, 0.1, 0, 0, 40, 40, K_WHITE, 1, 0.6);
-          this.timed(QK.Flash, QM.Billboard, 0, 3, 0, 0, 16, 16, C_FLESH, 2, 0.35);
-          this.burst(220, 0, 3, 0, 0, TAU, 8, 34, 10, 1.6, C_FLESH, 2.5, 0.25, 1.2, 10, PS.Spark, 0);
-          this.burst(160, 0, 3, 0, 0, TAU, 4, 22, 12, 2.2, C_GORE, 1, 0.35, 1.2, 26, PS.Blood, 1);
+          this.timed(QK.Flash, QM.Billboard, 0, 3, 0, 0, 16, 16, SC, 2, 0.35);
+          this.burst(220, 0, 3, 0, 0, TAU, 8, 34, 10, 1.6, SC, 2.5, 0.25, 1.2, 10, PS.Spark, 0);
+          if (foundry) this.burst(160, 0, 3, 0, 0, TAU, 4, 22, 12, 2.2, C_METAL, 1, 0.3, 1.2, 26, PS.Shard, 1);
+          else this.burst(160, 0, 3, 0, 0, TAU, 4, 22, 12, 2.2, C_GORE, 1, 0.35, 1.2, 26, PS.Blood, 1);
           this.burst(80, 0, 3, 0, 0, TAU, 2, 16, 6, 2.5, K_WHITE, 2, 0.18, 1.5, 4, PS.Pixel, 0);
           this.d.lights.flash(0, 0, 4, 60, 30, 3, 6, 1.2);
           this.sfx('synth_boom', 0, Number.NaN, 1, 1, 1);
@@ -809,6 +843,136 @@ export class FxDirector {
           this.wave(x, y, 0.9);
           this.sfx('brood_birth', x, y, 1, 1, 0.3);
           break;
+        // ───────────── Литейный цех
+        case Ev.LaneWarn: {
+          const L = w.lanes;
+          const k = x | 0;
+          if (k < L.count) {
+            const lx = L.cx[k]!;
+            const ly = L.cy[k]!;
+            this.sfx('lane_warn', lx, ly, 0.55, 1, 0.3, 2);
+            this.timed(QK.TeleLine, QM.Ground, lx, 0.06, ly, L.hw[k]! > L.hh[k]! ? 0 : Math.PI / 2, Math.max(L.hw[k]!, L.hh[k]!) * 2, Math.min(L.hw[k]!, L.hh[k]!) * 2.2, C_AMBER, 1.6, 1.4, 1);
+          }
+          break;
+        }
+        case Ev.LaneFlip: {
+          const L = w.lanes;
+          const k = x | 0;
+          if (k < L.count) {
+            const lx = L.cx[k]!;
+            const ly = L.cy[k]!;
+            this.sfx('lane_flip', lx, ly, 0.6, 1, 0.1, 3);
+            const horiz = L.hw[k]! > L.hh[k]!;
+            for (let s2 = -1; s2 <= 1; s2 += 2) {
+              const ex = lx + (horiz ? s2 * L.hw[k]! : 0);
+              const ey = ly + (horiz ? 0 : s2 * L.hh[k]!);
+              this.burst(10, ex, 0.2, ey, 0, TAU, 2, 7, 4, 0.4, C_SPARK, 2, 0.08, 3, 18, PS.Spark, 0);
+            }
+            this.burst(6, lx, 0.3, ly, 0, TAU, 0.5, 2, 1, 1.2, C_STEAM, 1, 0.9, 1.5, -0.4, PS.Smoke, 0.5);
+          }
+          break;
+        }
+        case Ev.PadWarn:
+          this.sfx('stamp_whine', x, y, 0.35, 1, 0.3, 3);
+          break;
+        case Ev.PadStamp:
+          this.sfx('stamp', x, y, 0.85, 1, 0.05, 4);
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 4.2, 4.2, C_AMBER, 2.2, 0.35);
+          this.timed(QK.Flash, QM.Billboard, x, 0.4, y, 0, 3, 3, K_WHITE, 1.5, 0.08);
+          this.burst(24, x, 0.15, y, 0, TAU, 4, 12, 3, 0.45, C_SPARK, 2.5, 0.09, 3, 22, PS.Spark, 0);
+          this.burst(10, x, 0.3, y, 0, TAU, 1, 4, 1.5, 1.4, C_STEAM, 1, 1.1, 1.2, -0.5, PS.Smoke, 0.6);
+          this.d.lights.flash(x, y, 0.5, 7, 6, 3, 0.6, 0.18);
+          this.d.floor.ripple(x, y, 0.6);
+          this.d.floor.decals.add(x, y, 2.4, 0, 0.012, 0.008, 0.004, 0.35, 3, this.rng.float() * 100, 1);
+          J.addTrauma(0.12 * this.near(x, y));
+          break;
+        case Ev.PylonCharge:
+          this.sfx('pylon_charge', x, y, 0.6, 1, 0.2, 3);
+          this.timed(QK.Ring, QM.Billboard, x, 2.6, y, 0, 3, 3, C_ARC, 2.5, 1);
+          break;
+        case Ev.Arc: {
+          // x,y → a,b; c = hit the player
+          const dx = a - x;
+          const dy = b - y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 0.1;
+          const ang = Math.atan2(dy, dx);
+          const mx = (x + a) / 2;
+          const my = (y + b) / 2;
+          this.timed(QK.Lightning, QM.Ground, mx, 0.9, my, ang, len, 1.6, C_ARC, 3, 0.22);
+          this.timed(QK.Lightning, QM.Ground, mx, 0.9, my, ang, len, 0.8, K_WHITE, 1.5, 0.12);
+          this.burst(12, a, 0.6, b, 0, TAU, 2, 9, 4, 0.3, C_ARC, 2.5, 0.08, 4, 6, PS.Spark, 0);
+          this.d.lights.flash(mx, my, 1, Math.min(14, len * 0.8 + 4), C_ARC[0]! * 5, C_ARC[1]! * 5, C_ARC[2]! * 5, 0.15);
+          this.sfx('arc_zap', mx, my, 0.75, 0.9 + this.rng.float() * 0.25, 0.04, 5);
+          if (c) {
+            J.addGlitch(0.25);
+            J.addChroma(0.6);
+          }
+          break;
+        }
+        case Ev.MarkHit: {
+          const R = a;
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, R * 3.4, R * 3.4, C_AMBER, 2.2, 0.32);
+          this.timed(QK.Flash, QM.Billboard, x, 0.5, y, 0, R * 2.2, R * 2.2, K_WHITE, 1.4, 0.07);
+          this.burst(10 + Math.floor(R * 8), x, 0.15, y, 0, TAU, 3, 10, 3, 0.4, C_SPARK, 2.2, 0.08, 3, 20, PS.Spark, 0);
+          this.burst(4 + Math.floor(R * 3), x, 0.3, y, 0, TAU, 1, 3, 1, 1.2, C_STEAM, 1, 0.9 + R * 0.3, 1.2, -0.5, PS.Smoke, 0.6);
+          this.d.floor.decals.add(x, y, R * 2.2, b ? 0 : this.rng.float() * TAU, 0.012, 0.007, 0.004, 0.4, 3, this.rng.float() * 100, 1);
+          this.d.floor.ripple(x, y, 0.4 + R * 0.25);
+          this.sfx('stamp', x, y, 0.4 + Math.min(0.5, R * 0.18), 1.1 - Math.min(0.3, R * 0.08), 0.03, 6);
+          J.addTrauma((0.06 + R * 0.05) * this.near(x, y));
+          break;
+        }
+        case Ev.HookFire:
+          this.sfx('hook_fire', x, y, 0.7, 1, 0.1, 3);
+          this.burst(6, x + Math.cos(a) * 1.2, 1, y + Math.sin(a) * 1.2, a, 0.4, 4, 10, 1, 0.2, C_SPARK, 2, 0.06, 4, 6, PS.Spark, 0);
+          break;
+        case Ev.HookHit:
+          this.sfx('hook_hit', x, y, 0.8, 1, 0.1, 3);
+          this.timed(QK.Ring, QM.Billboard, x, 0.8, y, 0, 2.2, 2.2, C_AMBER, 2.2, 0.2);
+          this.burst(14, x, 0.8, y, 0, TAU, 3, 9, 3, 0.3, C_SPARK, 2.5, 0.08, 4, 14, PS.Spark, 0);
+          J.addTrauma(0.25);
+          J.addChroma(0.4);
+          break;
+        case Ev.Shorted:
+          this.sfx('shorted', x, y, 0.5, 1, 0.06, 4);
+          this.burst(10, x, 1, y, 0, TAU, 2, 7, 4, 0.35, C_ARC, 2.5, 0.07, 4, 8, PS.Spark, 0);
+          break;
+        case Ev.ArmDown:
+          this.sfx('arm_down', x, y, 1, 1, 0.3);
+          this.explosionFx(x, y, 3.5, 1.2, 1);
+          this.burst(40, x, 2, y, 0, TAU, 3, 12, 8, 1.4, C_METAL, 1, 0.18, 1.2, 24, PS.Shard, 1);
+          this.burst(20, x, 1.2, y, 0, TAU, 0.5, 3, 2, 2.5, C_STEAM, 1, 1.6, 1.2, -0.6, PS.Smoke, 0.7);
+          J.addTrauma(0.6);
+          J.stop(0.08);
+          J.slow(0.4, 0.4);
+          break;
+        case Ev.HubShield:
+          this.sfx('hub_shield', x, y, 0.7, a ? 1 : 0.7, 0.2);
+          this.timed(QK.Ring, QM.Billboard, x, 2.2, y, 0, 8, 8, a ? C_ENERGY : C_AMBER, 2.5, 0.4);
+          if (!a) {
+            J.addChroma(0.5);
+            this.burst(30, x, 2.2, y, 0, TAU, 3, 10, 3, 0.6, C_ENERGY, 2.5, 0.1, 3, 4, PS.Pixel, 0);
+          }
+          break;
+        case Ev.Shunt: {
+          const L = w.lanes;
+          const k = x | 0;
+          if (k < L.count) {
+            if (a) {
+              this.sfx('shunt', L.cx[k]!, L.cy[k]!, 0.9, 1, 0.1);
+              const horiz = L.hw[k]! > L.hh[k]!;
+              this.timed(QK.Streak, QM.Ground, L.cx[k]!, 0.3, L.cy[k]!, Math.atan2(L.dy[k]!, L.dx[k]!), Math.max(L.hw[k]!, L.hh[k]!) * 2.2, Math.min(L.hw[k]!, L.hh[k]!) * 2, C_AMBER, 2, 0.3);
+              this.burst(30, L.cx[k]!, 0.2, L.cy[k]!, Math.atan2(L.dy[k]!, L.dx[k]!), 0.6, 6, 16, 2, 0.4, C_SPARK, 2.5, 0.08, 3, 12, PS.Spark, 0);
+              void horiz;
+              J.addTrauma(0.35 * this.near(L.cx[k]!, L.cy[k]!));
+            } else {
+              this.shuntK = k;
+              this.shuntT = y;
+              this.shuntMax = y;
+              this.sfx('lane_warn', L.cx[k]!, L.cy[k]!, 0.8, 0.8, 0.2);
+            }
+          }
+          break;
+        }
         case Ev.Telegraph:
           this.timed(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, a * 2, a * 2, C_ENEMY, 2.5, b, 1);
           break;
@@ -1107,6 +1271,7 @@ export class FxDirector {
         P.emit(x + r.sym() * 0.4, def.height * 0.6, y + r.sym() * 0.4, 0, 0, 0, 0.8, g.drop[0], g.drop[1], g.drop[2], 0.12, 1, 20, PS.Blood, g.dropAlpha);
         if (r.chance(0.3)) this.pendingDecal(x, y, 0.3, 0.3, def.material);
       }
+      if (type >= ET.GearMite) this.foundryEnemy(w, i, type, st, prev, x, y, ch, time);
       if (type === ET.Boss) {
         L.add(x, y, 4, 16, C_ENERGY[0]! * 3, C_ENERGY[1]! * 3, C_ENERGY[2]! * 3);
         if (r.chance(0.5)) {
@@ -1116,6 +1281,7 @@ export class FxDirector {
       }
     }
 
+    if (w.act === 2) this.foundryFrame(w, dt, time);
     // boss lasers
     const LS = w.lasers;
     for (let k = 0; k < MAX_LASERS; k++) {
@@ -1201,7 +1367,229 @@ export class FxDirector {
    *  4.6 →       SYNTHESIS  core detonates (ActSynth event); a crimson front writes the flesh
    *                         sector outward, growths sprout and embers rise along the seam
    */
-  private transitionFx(_w: World, t: number, dt: number, time: number): void {
+  // ───────────────────────────── Литейный цех: per-frame machinery visuals
+  private foundryFrame(w: World, dt: number, time: number): void {
+    const Qb = this.d.quads;
+    const P = this.d.particles;
+    const L = this.d.lights;
+    const r = this.rng;
+    // impact marks (stampers, PRESS)
+    const M = w.marks;
+    for (let i = 0; i < Math.min(M.hi, MAX_MARKS); i++) {
+      if (!M.alive[i]) continue;
+      const t = M.t[i]!;
+      const fill = M.fill[i]!;
+      const hot = t >= fill;
+      const pr = hot ? 1.5 : t / Math.max(0.01, fill);
+      const R = M.r[i]!;
+      const k = hot ? 1.2 : 1.6 + pr * 1.2;
+      const c = hot ? K_WHITE : C_AMBER;
+      if (M.square[i]) Qb.push(QK.Plate, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * k, c[1]! * k, c[2]! * k, 0, pr, i);
+      else Qb.push(QK.TeleCircle, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * k, c[1]! * k, c[2]! * k, 0, Math.min(1, pr), i);
+      if (!hot && pr > 0.7) L.add(M.x[i]!, M.y[i]!, 0.3, R * 2 + 2, 2 * pr, 0.8 * pr, 0.1);
+    }
+    // saw tracks: dim while arming, then a hot orange score that cools off
+    const T = w.tracks;
+    for (let i = 0; i < MAX_TRACKS; i++) {
+      if (!T.alive[i]) continue;
+      const a = T.age[i]!;
+      const dx = T.x1[i]! - T.x0[i]!;
+      const dy = T.y1[i]! - T.y0[i]!;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.05) continue;
+      const armed = a >= TRACK_ARM;
+      const fade = armed ? 1 - (a - TRACK_ARM) / (TRACK_LIFE - TRACK_ARM) : 0.35 + (a / TRACK_ARM) * 0.4;
+      const k = armed ? 2.6 * (0.4 + fade * 0.6) : 1.2;
+      Qb.push(QK.Needle, QM.Ground, (T.x0[i]! + T.x1[i]!) / 2, 0.06, (T.y0[i]! + T.y1[i]!) / 2, Math.atan2(dy, dx), len + 0.4, armed ? 0.55 : 0.3, C_AMBER[0]! * k * fade, C_AMBER[1]! * k * fade, C_AMBER[2]! * k * fade, 0, 0, i);
+      if (armed && r.chance(0.04 * fade)) P.emit(T.x0[i]! + dx * r.float(), 0.1, T.y0[i]! + dy * r.float(), 0, r.range(0.4, 1.2), 0, 0.6, 0.04, 0.035, 0.03, 0.4, 1, -0.2, PS.Smoke, 0.4);
+    }
+    // arc pylons: an idle violet crown; while charged the coil sparks and crackles up the mast
+    const Y = w.pylons;
+    for (let k = 0; k < Y.count; k++) {
+      const pi = Y.pillar[k]!;
+      const x = w.pillars.x[pi]!;
+      const y = w.pillars.y[pi]!;
+      const ch = Y.charge[k]! > 0 ? 1 - Y.charge[k]! : 0;
+      const fl = 0.7 + 0.3 * Math.sin(time * 11 + k);
+      L.add(x, y, 3, 5 + ch * 9, C_ARC[0]! * (0.5 + ch * 3) * fl, C_ARC[1]! * (0.5 + ch * 3) * fl, C_ARC[2]! * (0.5 + ch * 3) * fl);
+      if (ch > 0) {
+        Qb.push(QK.Ring, QM.Billboard, x, 3, y, 0, 2 + ch * 2, 2 + ch * 2, C_ARC[0]! * 2, C_ARC[1]! * 2, C_ARC[2]! * 2, 0, 1 - ch, k);
+        for (let s = 0; s < 2; s++) {
+          const pa = r.float() * TAU;
+          P.emit(x + Math.cos(pa) * 0.5, r.range(0.4, 3), y + Math.sin(pa) * 0.5, Math.cos(pa) * 3, r.range(-2, 4), Math.sin(pa) * 3, 0.18, C_ARC[0]! * 3, C_ARC[1]! * 3, C_ARC[2]! * 3, 0.07, 3, 0, PS.Spark, 0);
+        }
+      } else if (r.chance(0.04)) {
+        const pa = r.float() * TAU;
+        this.timed(QK.Lightning, QM.Billboard, x + Math.cos(pa) * 0.35, 3.1, y + Math.sin(pa) * 0.35, pa, 1.1, 0.5, C_ARC, 1.8, 0.07);
+      }
+    }
+    // coolant pools: a cold violet glow pools on the steel; fresh flood pools spray as they spread
+    const PO = w.pools;
+    for (let k = 0; k < PO.count; k++) {
+      if (k < 6) L.add(PO.x[k]!, PO.y[k]!, 0.2, PO.r[k]! * 1.6, 0.25, 0.1, 0.8);
+      if (PO.life[k]! > 0 && r.chance(0.08)) {
+        const pa = r.float() * TAU;
+        P.emit(PO.x[k]! + Math.cos(pa) * PO.r[k]!, 0.1, PO.y[k]! + Math.sin(pa) * PO.r[k]!, 0, r.range(0.3, 0.9), 0, 0.9, 0.06, 0.03, 0.14, 0.5, 1, -0.2, PS.Smoke, 0.35);
+      }
+    }
+    // PRESS shunt: the targeted belt glows hotter and hotter until it slams
+    if (this.shuntT > 0) {
+      this.shuntT -= dt;
+      const k = this.shuntK;
+      const LN = w.lanes;
+      if (k >= 0 && k < LN.count) {
+        const pr = 1 - Math.max(0, this.shuntT) / this.shuntMax;
+        const horiz = LN.hw[k]! > LN.hh[k]!;
+        const flick = Math.floor(time * (8 + pr * 16)) % 2 ? 1 : 0.55;
+        Qb.push(QK.TeleLine, QM.Ground, LN.cx[k]!, 0.08, LN.cy[k]!, Math.atan2(LN.dy[k]!, LN.dx[k]!), Math.max(LN.hw[k]!, LN.hh[k]!) * 2, Math.min(LN.hw[k]!, LN.hh[k]!) * 2.4, C_AMBER[0]! * 2.4 * flick, C_AMBER[1]! * 2.4 * flick, C_AMBER[2]! * 2.4 * flick, 0, pr, k);
+        void horiz;
+      }
+    }
+  }
+
+  private foundryEnemy(w: World, i: number, type: number, st: number, prev: number, x: number, y: number, ch: number, time: number): void {
+    const E = w.enemies;
+    const Qb = this.d.quads;
+    const P = this.d.particles;
+    const L = this.d.lights;
+    const r = this.rng;
+    const entered = st !== prev && prev !== 255;
+    // shorted machines crawl with violet sparks
+    if (E.shortT[i]! > 0 && r.chance(0.6)) {
+      const pa = r.float() * TAU;
+      const rr = E.r[i]!;
+      P.emit(x + Math.cos(pa) * rr, r.range(0.3, enemyDef(type).height), y + Math.sin(pa) * rr, Math.cos(pa) * 2, r.range(0, 3), Math.sin(pa) * 2, 0.15, C_ARC[0]! * 3, C_ARC[1]! * 3, C_ARC[2]! * 3, 0.07, 3, 4, PS.Spark, 0);
+      if (r.chance(0.1)) this.timed(QK.Lightning, QM.Billboard, x, enemyDef(type).height * 0.6, y, r.float() * TAU, rr * 2.4, 0.5, C_ARC, 1.8, 0.06);
+    }
+    switch (type) {
+      case ET.GearMite:
+        if (entered && st === AS.Windup) this.sfx('mite_spin', x, y, 0.35, 0.9 + r.float() * 0.3, 0.05, 4);
+        if (st === AS.Windup) {
+          const a = E.face[i]!;
+          Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(a) * 2.5, 0.07, y + Math.sin(a) * 2.5, a, 5, 0.5, C_ENEMY[0]! * 1.8, C_ENEMY[1]! * 1.8, C_ENEMY[2]! * 1.8, 0, ch, i);
+          if (r.chance(0.6)) P.emit(x, 0.2, y, r.sym() * 3, r.range(1, 3), r.sym() * 3, 0.2, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.06, 2, 14, PS.Spark, 0);
+        } else if (st === AS.Dash && r.chance(0.7)) {
+          P.emit(x, 0.1, y, -E.vx[i]! * 0.3 + r.sym() * 2, r.range(1, 3), -E.vy[i]! * 0.3 + r.sym() * 2, 0.25, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.06, 2, 16, PS.Spark, 0);
+        }
+        break;
+      case ET.Stamper:
+        if (entered && st === AS.Windup) this.sfx('stamp_whine', x, y, 0.4, 1.2, 0.1, 3);
+        if (st === AS.Windup) L.add(x, y, 1.6, 3 + ch * 4, 2.5 * ch, 1 * ch, 0.1);
+        break;
+      case ET.ArcDrone: {
+        L.add(x, y, 1.2, 3, C_ARC[0]! * 0.8, C_ARC[1]! * 0.8, C_ARC[2]! * 0.8);
+        if (st === AS.Windup) {
+          if (entered) this.sfx('pylon_charge', x, y, 0.4, 1.5, 0.1, 3);
+          const dx = E.tx[i]! - x;
+          const dy = E.ty[i]! - y;
+          const l = Math.sqrt(dx * dx + dy * dy) || 1;
+          const reach = Math.min(9, l);
+          const a = Math.atan2(dy, dx);
+          const locked = ch > 0.75;
+          const k = locked ? 3 : 1.5;
+          Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(a) * reach * 0.5, 0.08, y + Math.sin(a) * reach * 0.5, a, reach, 0.6, C_ARC[0]! * k, C_ARC[1]! * k, C_ARC[2]! * k, 0, ch, i);
+          L.add(x, y, 1.2, 3 + ch * 5, C_ARC[0]! * ch * 3, C_ARC[1]! * ch * 3, C_ARC[2]! * ch * 3);
+          if (r.chance(0.5)) {
+            const pa = r.float() * TAU;
+            P.emit(x + Math.cos(pa) * 0.9, 1.2 + r.sym() * 0.4, y + Math.sin(pa) * 0.9, -Math.cos(pa) * 4, 0, -Math.sin(pa) * 4, 0.2, C_ARC[0]! * 3, C_ARC[1]! * 3, C_ARC[2]! * 3, 0.06, 0.5, 0, PS.Spark, 0);
+          }
+        }
+        break;
+      }
+      case ET.Hauler: {
+        if (st === AS.Windup) {
+          const a = E.aim[i]!;
+          Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(a) * 4.5, 0.07, y + Math.sin(a) * 4.5, a, 9, 0.6, C_AMBER[0]! * 1.8, C_AMBER[1]! * 1.8, C_AMBER[2]! * 1.8, 0, ch, i);
+          L.add(x, y, 1.3, 3 + ch * 3, 2 * ch, 0.8 * ch, 0.1);
+        } else if ((st === AS.Attack || st === AS.Recover) && E.aux[i]! > 0.2) {
+          // the cable: from the claw to the hook head (or to the player while reeling)
+          const a = E.aim[i]!;
+          const d = E.aux[i]!;
+          let hx = x + Math.cos(a) * d;
+          let hy = y + Math.sin(a) * d;
+          const p = w.player;
+          if (st === AS.Recover && p.pullT > 0 && p.pullBy === i) {
+            hx = p.x;
+            hy = p.y;
+          }
+          const dx = hx - x;
+          const dy = hy - y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const ang = Math.atan2(dy, dx);
+          Qb.push(QK.Needle, QM.Ground, (x + hx) / 2, 1.0, (y + hy) / 2, ang, len, 0.35, C_METAL[0]! * 2.5, C_METAL[1]! * 2.5, C_METAL[2]! * 2.5, 0, 0, i);
+          Qb.push(QK.Orb, QM.Billboard, hx, 1.0, hy, 0, 0.9, 0.9, C_AMBER[0]! * 2, C_AMBER[1]! * 2, C_AMBER[2]! * 2, 0, 0, i);
+          L.add(hx, hy, 1, 3, 2, 0.8, 0.1);
+        }
+        break;
+      }
+      case ET.Skiff:
+        if (r.chance(st === AS.Stunned ? 0.2 : 0.8)) {
+          const pa = r.float() * TAU;
+          P.emit(x + Math.cos(pa) * 0.6, 0.35, y + Math.sin(pa) * 0.6, -Math.sin(pa) * 8 + r.sym(), r.range(0.5, 2.5), Math.cos(pa) * 8 + r.sym(), 0.2, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.06, 2, 14, PS.Spark, 0);
+        }
+        L.add(x, y, 0.4, 3, 1.6, 0.6, 0.1);
+        break;
+      case ET.Overseer: {
+        const top = 2.9;
+        L.add(x, y, top, 4 + ch * 6, 2.2 + ch * 3, 1 + ch, 0.15);
+        if (st === AS.Windup) {
+          Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 24, 24, C_AMBER[0]! * 0.9, C_AMBER[1]! * 0.9, C_AMBER[2]! * 0.9, 0, ch, i);
+          if (entered) this.sfx('lane_warn', x, y, 0.5, 1.3, 0.2, 2);
+        } else if (st === AS.Attack && entered) {
+          this.timed(QK.Ring, QM.Ground, x, 0.07, y, 0, 16, 16, C_AMBER, 2, 0.5);
+          this.sfx('pylon_charge', x, y, 0.5, 0.8, 0.2, 2);
+        } else if (st === AS.Guard && r.chance(0.5)) {
+          P.emit(x + r.sym() * 0.4, r.range(0.8, top), y + r.sym() * 0.4, r.sym() * 3, r.range(0, 3), r.sym() * 3, 0.25, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.07, 2, 12, PS.Spark, 0);
+        }
+        break;
+      }
+      case ET.Press: {
+        // hovering gantry: work lights under the head, steam vents, hot slam glow when charged
+        L.add(x, y, 2.5, 9 + ch * 6, 3 + ch * 4, 1.4 + ch * 1.5, 0.3);
+        if (r.chance(0.3)) {
+          const pa = r.float() * TAU;
+          P.emit(x + Math.cos(pa) * 2, 3.5, y + Math.sin(pa) * 2, Math.cos(pa) * 0.6, r.range(1, 2.5), Math.sin(pa) * 0.6, 1.4, C_STEAM[0]!, C_STEAM[1]!, C_STEAM[2]!, 0.8, 1.2, -0.4, PS.Smoke, 0.5);
+        }
+        if (ch > 0 && r.chance(0.5 * ch)) {
+          const pa = r.float() * TAU;
+          P.emit(x + Math.cos(pa) * 2.2, 2.6, y + Math.sin(pa) * 2.2, r.sym() * 2, -r.range(1, 4), r.sym() * 2, 0.3, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.07, 2, 18, PS.Spark, 0);
+        }
+        break;
+      }
+      case ET.Assembler: {
+        const sh = E.shield[i]! > 0;
+        L.add(x, y, 3.3, 14, C_ENERGY[0]! * 2.5, C_ENERGY[1]! * 2.5, C_ENERGY[2]! * 2.5);
+        if (sh) {
+          const pulse = 0.8 + 0.2 * Math.sin(time * 9);
+          Qb.push(QK.Ring, QM.Billboard, x, 2.2, y, time * 0.5, 7.2, 7.2, C_ENERGY[0]! * 1.6 * pulse, C_ENERGY[1]! * 1.6 * pulse, C_ENERGY[2]! * 1.6 * pulse, 0, 0.35, i);
+          Qb.push(QK.Ring, QM.Ground, x, 0.08, y, 0, 6.2, 6.2, C_ENERGY[0]! * 1.4, C_ENERGY[1]! * 1.4, C_ENERGY[2]! * 1.4, 0, 0.2, i);
+        }
+        // power cables to every live arm
+        for (let k = 0; k < E.hi; k++) {
+          if (!E.alive[k] || E.type[k] !== ET.Arm || E.st[k] === AS.Spawning) continue;
+          const dx = E.x[k]! - x;
+          const dy = E.y[k]! - y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const ang = Math.atan2(dy, dx);
+          Qb.push(QK.Needle, QM.Ground, (x + E.x[k]!) / 2, 0.08, (y + E.y[k]!) / 2, ang, len, 0.45, C_ENERGY[0]! * 0.9, C_ENERGY[1]! * 0.9, C_ENERGY[2]! * 0.9, 0, 0, k);
+          // energy packets travelling hub → arm
+          const tt = (time * 0.7 + k * 0.37) % 1;
+          Qb.push(QK.Orb, QM.Ground, x + dx * tt, 0.1, y + dy * tt, 0, 0.6, 0.6, C_ENERGY[0]! * 2, C_ENERGY[1]! * 2, C_ENERGY[2]! * 2, 0, 0, k);
+        }
+        break;
+      }
+      case ET.Arm:
+        L.add(x, y, 2.6, 4, 1.6, 0.7, 0.1);
+        if (E.hp[i]! < E.maxHp[i]! * 0.4 && r.chance(0.3)) P.emit(x + r.sym() * 0.5, 2.4, y + r.sym() * 0.5, r.sym(), r.range(0.5, 2), r.sym(), 1.2, 0.04, 0.035, 0.04, 0.6, 1, -0.3, PS.Smoke, 0.6);
+        break;
+    }
+  }
+
+  private transitionFx(w: World, t: number, dt: number, time: number): void {
+    // Плоть → Цех: flesh is melted down, molten steel is poured in its place
+    const toFoundry = (WAVES[w.wave.index]?.act ?? 1) === 2;
+    const OLD = toFoundry ? C_FLESH : C_OLD;
+    const NEW = toFoundry ? C_AMBER : C_FLESH;
     const P = this.d.particles;
     const Qb = this.d.quads;
     const L = this.d.lights;
@@ -1217,7 +1605,7 @@ export class FxDirector {
         const y = Math.sin(a) * rr;
         if (Math.abs(x) > ARENA_HW || Math.abs(y) > ARENA_HH) continue;
         const k2 = r.float();
-        P.emit(x, 0.05, y, r.sym() * 0.6, r.range(3, 9), r.sym() * 0.6, r.range(0.8, 1.6), (k2 < 0.6 ? C_OLD[0]! : 1.2) * 3, (k2 < 0.6 ? C_OLD[1]! : 0.5) * 3, (k2 < 0.6 ? C_OLD[2]! : 1.5) * 3, r.range(0.08, 0.18), 0.6, -1.5, PS.Pixel, 0);
+        P.emit(x, 0.05, y, r.sym() * 0.6, r.range(3, 9), r.sym() * 0.6, r.range(0.8, 1.6), (k2 < 0.6 ? OLD[0]! : 1.2) * 3, (k2 < 0.6 ? OLD[1]! : 0.5) * 3, (k2 < 0.6 ? OLD[2]! : 1.5) * 3, r.range(0.08, 0.18), 0.6, -1.5, PS.Pixel, 0);
       }
       J.glitch = Math.max(J.glitch, 0.35);
     }
@@ -1235,21 +1623,21 @@ export class FxDirector {
         const tx = Math.cos(a + sw) * 0.8;
         const ty = Math.sin(a + sw) * 0.8;
         const h0 = r.range(0.1, 1.5);
-        const cr = C_OLD[0]! + (C_FLESH[0]! - C_OLD[0]!) * f;
-        const cg = C_OLD[1]! + (C_FLESH[1]! - C_OLD[1]!) * f;
-        const cb = C_OLD[2]! + (C_FLESH[2]! - C_OLD[2]!) * f;
+        const cr = OLD[0]! + (NEW[0]! - OLD[0]!) * f;
+        const cg = OLD[1]! + (NEW[1]! - OLD[1]!) * f;
+        const cb = OLD[2]! + (NEW[2]! - OLD[2]!) * f;
         P.emit(x, h0, y, (tx - x) / life, (3 - h0) / life, (ty - y) / life, life, cr * 2.2, cg * 2.2, cb * 2.2, r.range(0.07, 0.15), 0.001, 0, k & 1 ? PS.Spark : PS.Pixel, 0);
       }
       // the core: a dense, rotating knot of matter above the centre
       const s = 0.6 + f * 4.2 + Math.sin(time * 18) * 0.15 * f;
       Qb.push(QK.Orb, QM.Billboard, 0, 3, 0, 0, s, s, 2 + f * 2, 0.3 + f * 0.3, 0.8 + (1 - f) * 2, 0, 0, 7);
-      Qb.push(QK.Flash, QM.Billboard, 0, 3, 0, time * 3, s * 1.8, s * 1.8, C_FLESH[0]! * f, C_FLESH[1]! * f + 0.4 * (1 - f), C_FLESH[2]! * f + 1.2 * (1 - f), 0, 0.5, 3);
+      Qb.push(QK.Flash, QM.Billboard, 0, 3, 0, time * 3, s * 1.8, s * 1.8, NEW[0]! * f, NEW[1]! * f + 0.4 * (1 - f), NEW[2]! * f + 1.2 * (1 - f), 0, 0.5, 3);
       Qb.push(QK.Vortex, QM.Ground, 0, 0.1, 0, -time * 2.5, 5 + f * 9, 5 + f * 9, 1.2 + f, 0.2, 1.5 - f, 0.5, 0, 5);
       L.add(0, 0, 3, 14 + f * 20, 2 + f * 10, 0.6 + f, 3 * (1 - f) + f * 2);
       this.d.camera.focus(0, 0, 0.3);
       J.addTrauma(dt * f * 0.6);
       J.glitch = Math.max(J.glitch, 0.15 + f * 0.4);
-      if (Math.floor((t - dt) * 4) !== Math.floor(t * 4)) this.timed(QK.Ring, QM.Billboard, 0, 3, 0, 0, s * 2.5, s * 2.5, C_FLESH, 1.5, 0.35);
+      if (Math.floor((t - dt) * 4) !== Math.floor(t * 4)) this.timed(QK.Ring, QM.Billboard, 0, 3, 0, 0, s * 2.5, s * 2.5, NEW, 1.5, 0.35);
     }
     if (t >= SYN) {
       // embers and spatter ride the synthesis seam
@@ -1260,8 +1648,11 @@ export class FxDirector {
           const x = Math.cos(a) * R;
           const y = Math.sin(a) * R;
           if (Math.abs(x) > ARENA_HW || Math.abs(y) > ARENA_HH) continue;
-          P.emit(x, 0.1, y, Math.cos(a) * 2, r.range(1, 4), Math.sin(a) * 2, r.range(0.5, 1.1), C_FLESH[0]! * 1.5, C_FLESH[1]! * 1.5, C_FLESH[2]! * 1.5, r.range(0.08, 0.16), 1, 0, PS.Ember, 0);
-          if (k < 4) P.emit(x, 0.2, y, Math.cos(a) * 3, r.range(2, 5), Math.sin(a) * 3, 1, C_GORE[0]!, C_GORE[1]!, C_GORE[2]!, 0.16, 1, 20, PS.Blood, 1);
+          P.emit(x, 0.1, y, Math.cos(a) * 2, r.range(1, 4), Math.sin(a) * 2, r.range(0.5, 1.1), NEW[0]! * 1.5, NEW[1]! * 1.5, NEW[2]! * 1.5, r.range(0.08, 0.16), 1, 0, PS.Ember, 0);
+          if (k < 4) {
+            if (toFoundry) P.emit(x, 0.2, y, Math.cos(a) * 3, r.range(3, 7), Math.sin(a) * 3, 0.8, C_SPARK[0]! * 1.4, C_SPARK[1]! * 1.4, C_SPARK[2]! * 1.4, 0.1, 1, 22, PS.Spark, 0);
+            else P.emit(x, 0.2, y, Math.cos(a) * 3, r.range(2, 5), Math.sin(a) * 3, 1, C_GORE[0]!, C_GORE[1]!, C_GORE[2]!, 0.16, 1, 20, PS.Blood, 1);
+          }
         }
         L.add(Math.cos(time) * R * 0.5, Math.sin(time) * R * 0.5, 1, 12, 4, 0.3, 0.6);
       }

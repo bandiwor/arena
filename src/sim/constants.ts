@@ -13,7 +13,12 @@ export const MAX_PICKUPS = 128;
 export const MAX_LASERS = 6;
 export const MAX_WELLS = 4;
 export const MAX_PILLARS = 16;
-export const MAX_POOLS = 8;
+export const MAX_POOLS = 12;
+export const MAX_LANES = 4;
+export const MAX_PADS = 8;
+export const MAX_PYLONS = 4;
+export const MAX_MARKS = 96;
+export const MAX_TRACKS = 256;
 
 export const Team = { Player: 0, Enemy: 1 } as const;
 
@@ -47,9 +52,18 @@ export const ET = {
   Worm: 8,
   Parasite: 9,
   Brood: 10,
+  GearMite: 11,
+  Stamper: 12,
+  ArcDrone: 13,
+  Hauler: 14,
+  Skiff: 15,
+  Overseer: 16,
+  Press: 17,
+  Assembler: 18,
+  Arm: 19,
 } as const;
 export type EnemyType = (typeof ET)[keyof typeof ET];
-export const ENEMY_TYPE_COUNT = 11;
+export const ENEMY_TYPE_COUNT = 20;
 
 export const WP = {
   Pulse: 0,
@@ -58,9 +72,10 @@ export const WP = {
   Launcher: 3,
   Rail: 4,
   Singularity: 5,
+  ArcRail: 6,
 } as const;
 export type WeaponId = (typeof WP)[keyof typeof WP];
-export const WEAPON_COUNT = 6;
+export const WEAPON_COUNT = 7;
 
 /** AI states (shared vocabulary for all archetypes; renderer reads these). */
 export const AS = {
