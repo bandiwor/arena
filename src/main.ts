@@ -31,10 +31,28 @@ const attractFn = (w: Parameters<typeof bot>[0], t: number, c: Parameters<typeof
 menus.onMenu = () => game.startAttract(attractSim(), attractFn);
 game.startAttract(attractSim(), attractFn);
 
-const debug = __DEV__ || params.has('debug');
-if (debug) {
-  void import('./debug/dbg').then(({ installDebug, buildScene }) => {
-    installDebug(game);
+/** Debug tools are lazy-loaded: in dev / with ?debug at startup, otherwise on first use (menu button or F1). */
+let debugP: Promise<import('./debug/panel').DebugPanel> | null = null;
+function ensureDebug(): Promise<import('./debug/panel').DebugPanel> {
+  if (!debugP) {
+    debugP = Promise.all([import('./debug/dbg'), import('./debug/panel')]).then(([d, p]) => {
+      const { api, overlay } = d.installDebug(game);
+      return new p.DebugPanel(game, api, overlay);
+    });
+  }
+  return debugP;
+}
+menus.onDebug = () => void ensureDebug().then((p) => p.show());
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F1' && !debugP) {
+    e.preventDefault();
+    void ensureDebug().then((p) => p.show());
+  }
+});
+
+if (__DEV__ || params.has('debug')) {
+  void ensureDebug().then(async () => {
+    const { buildScene } = await import('./debug/dbg');
     const scene = params.get('scene');
     const seed = parseInt(params.get('seed') ?? '1', 10);
     const diff = parseInt(params.get('diff') ?? '1', 10);

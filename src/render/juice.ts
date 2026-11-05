@@ -75,13 +75,20 @@ export class Juice {
     this.damage = Math.max(0, this.damage - dt * 1.6);
     this.saturate = Math.max(0, this.saturate - dt * 2);
     this.zoom *= Math.max(0, 1 - dt * 7);
-    // critically-damped-ish spring for camera kick
+    // critically-damped-ish spring for camera kick. Semi-implicit Euler in ≤ 1/240 s sub-steps:
+    // a single explicit step with a long frame (dt = 0.1 s) is unstable and used to blow up to
+    // NaN, which turned the whole frame black.
     const k = 260;
     const d = 22;
-    this.kickVX += (-this.kickX * k - this.kickVX * d) * dt;
-    this.kickVY += (-this.kickY * k - this.kickVY * d) * dt;
-    this.kickX += this.kickVX * dt;
-    this.kickY += this.kickVY * dt;
+    const n = Math.max(1, Math.ceil(dt * 240));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      this.kickVX += (-this.kickX * k - this.kickVX * d) * h;
+      this.kickVY += (-this.kickY * k - this.kickVY * d) * h;
+      this.kickX += this.kickVX * h;
+      this.kickY += this.kickVY * h;
+    }
+    if (!Number.isFinite(this.kickX + this.kickY + this.kickVX + this.kickVY)) this.kickX = this.kickY = this.kickVX = this.kickVY = 0;
   }
 
   /** effective sim time multiplier (0 during hitstop) */

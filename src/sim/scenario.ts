@@ -322,3 +322,26 @@ export const Inputs = {
     };
   },
 };
+
+/** picks the first offered upgrade (for bots that don't choose) */
+function withAutoPick(fn: InputFn): InputFn {
+  return (w, t, c) => {
+    fn(w, t, c);
+    if (w.wave.phase === WavePhase.Upgrade && w.wave.t > 0.4) c.btn |= 1 << Btn.PickShift;
+  };
+}
+
+export interface BotSkill {
+  readonly key: string;
+  readonly name: string;
+  readonly desc: string;
+  make(): InputFn;
+}
+
+/** Bot mastery levels (same bots the balance report uses). */
+export const BOT_SKILLS: readonly BotSkill[] = [
+  { key: 'novice', name: 'Новичок', desc: 'Стреляет в ближайшего, ходит по квадрату, рывок по таймеру. Телеграфов не читает.', make: () => withAutoPick(Inputs.aimbot()) },
+  { key: 'casual', name: 'Средний', desc: 'Реакция ~200 мс. Уклоняется и кайтит, но часто опаздывает.', make: () => Inputs.skilled({ reaction: 12 }) },
+  { key: 'skilled', name: 'Опытный', desc: 'Реакция ~133 мс. Читает телеграфы, обходит щиты, выбирает апгрейды.', make: () => Inputs.skilled({ reaction: 8 }) },
+  { key: 'master', name: 'Мастер', desc: 'Реакция ~83 мс. Рывки сквозь пули в последний момент.', make: () => Inputs.skilled({ reaction: 5 }) },
+];

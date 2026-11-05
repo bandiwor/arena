@@ -9,7 +9,7 @@ import { packInputs, unpackInputs, type ReplayData } from './sim/replay';
 import { hashWorld, Sim } from './sim/sim';
 import { WavePhase, type World } from './sim/world';
 import { Hud } from './ui/hud';
-import type { InputFn } from './sim/scenario';
+import type { BotSkill, InputFn } from './sim/scenario';
 
 export type Mode = 'menu' | 'play' | 'pause' | 'over' | 'replay' | 'demo';
 
@@ -58,6 +58,10 @@ export class Game {
   onFrame: ((dt: number) => void) | null = null;
   /** scripted input used in menu attract mode */
   attract: InputFn | null = null;
+  /** bot currently playing a watched run (null = none) */
+  bot: BotSkill | null = null;
+  demoSpeed = 1;
+  private noReplay = false;
   private overShown = false;
 
   constructor(
@@ -98,6 +102,8 @@ export class Game {
 
   start(cfg: RunConfig): void {
     this.config = cfg;
+    this.bot = null;
+    this.noReplay = false;
     this.sim = new Sim({ seed: cfg.seed, difficulty: cfg.difficulty, mode: cfg.sandbox ? 'sandbox' : 'campaign', startWave: cfg.startWave ?? 1 });
     this.recorder.reset();
     this.replay = null;
@@ -106,6 +112,25 @@ export class Game {
     this.hud.reset();
     this.renderer.floor.decals.clear();
     this.renderer.camera.snap(this.world.player.x, this.world.player.y);
+    this.setMode('play');
+  }
+
+  /** Watch a bot play a full campaign. */
+  startBot(cfg: RunConfig, skill: BotSkill): void {
+    this.start(cfg);
+    this.bot = skill;
+    this.attract = skill.make();
+    this.demoSpeed = 1;
+    this.setMode('demo');
+  }
+
+  /** Take over a bot's run mid-game (the run continues under your control). */
+  takeOver(): void {
+    if (this.mode !== 'demo' || !this.bot) return;
+    this.bot = null;
+    this.attract = null;
+    this.recorder.reset(); // replay can't be reproduced from a half-bot run
+    this.noReplay = true;
     this.setMode('play');
   }
 
@@ -177,7 +202,7 @@ export class Game {
     let steps = 0;
     const simT0 = performance.now();
     if (running && !this.paused) {
-      const speed = this.mode === 'replay' ? this.replaySpeed : 1;
+      const speed = this.mode === 'replay' ? this.replaySpeed : this.mode === 'demo' && this.bot ? this.demoSpeed : 1;
       this.renderer.fx.quiet = speed > 2;
       this.acc += realDt * J.simScale * this.timeScale * speed;
       const maxSteps = MAX_STEPS * Math.max(1, speed);
@@ -216,11 +241,11 @@ export class Game {
     this.onFrame?.(realDt);
     const r1 = performance.now();
     // end states
-    if ((this.mode === 'play' || this.mode === 'replay') && !this.overShown) {
+    if ((this.mode === 'play' || this.mode === 'replay' || (this.mode === 'demo' && this.bot)) && !this.overShown) {
       const ph = w.wave.phase;
       if ((ph === WavePhase.Dead && w.wave.t > 2) || (ph === WavePhase.Victory && w.wave.t > 2.5) || (this.mode === 'replay' && this.replay && this.replayTick >= this.replay.length && steps === 0)) {
         this.overShown = true;
-        if (this.mode === 'play') this.lastReplay = this.makeReplay();
+        if (this.mode === 'play' && !this.noReplay) this.lastReplay = this.makeReplay();
         this.setMode('over');
       }
     }

@@ -83,7 +83,7 @@ export default defineConfig(({ command }) => ({
       format: { comments: false },
     },
     rollupOptions: {
-      input: { main: resolve(import.meta.dirname, 'index.html') },
+      input: { main: resolve(import.meta.dirname, 'index.html'), lab: resolve(import.meta.dirname, 'lab.html') },
     },
   },
   test: {

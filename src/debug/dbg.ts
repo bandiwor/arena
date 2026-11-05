@@ -132,8 +132,23 @@ export function buildScene(name: string, seed: number, difficulty: number): Sim 
  * window.dbg — console API for precise scene modelling and debugging.
  * Everything here goes through the same sim functions as gameplay.
  */
-export function installDebug(game: Game): DebugOverlay {
+export type DebugApi = ReturnType<typeof makeApi>;
+
+export function installDebug(game: Game): { overlay: DebugOverlay; api: DebugApi } {
   const overlay = new DebugOverlay(game);
+  const api = makeApi(game, overlay);
+  (window as unknown as { dbg: DebugApi }).dbg = api;
+  game.input.onKey = (code) => {
+    if (code === 'Backquote') api.overlay();
+    if (code === 'F2') game.paused = !game.paused;
+    if (code === 'F3') api.step(1);
+    if (code === 'F4') game.world.god = !game.world.god;
+  };
+  game.onFrame = () => overlay.draw();
+  return { overlay, api };
+}
+
+function makeApi(game: Game, overlay: DebugOverlay) {
   let ovIdx = 0;
   const w = (): World => game.world;
   const api = {
@@ -325,13 +340,5 @@ dbg.shot() → dataURL`;
     },
     constants: { WP, ET, AS, WavePhase, MUTATORS: MUTATORS.map((m) => m.key), UPGRADES: UPGRADES.map((u) => u.key) },
   };
-  (window as unknown as { dbg: typeof api }).dbg = api;
-  game.input.onKey = (code) => {
-    if (code === 'Backquote') api.overlay();
-    if (code === 'F2') game.paused = !game.paused;
-    if (code === 'F3') api.step(1);
-    if (code === 'F4') w().god = !w().god;
-  };
-  game.onFrame = () => overlay.draw();
-  return overlay;
+  return api;
 }

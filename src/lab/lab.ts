@@ -224,7 +224,7 @@ function slider(parent: HTMLElement, label: string, min: number, max: number, st
 }
 
 const STATES: Record<string, number> = { idle: AS.Move, windup: AS.Windup, attack: AS.Attack, dash: AS.Dash, stunned: AS.Stunned, spawn: AS.Spawning };
-left.innerHTML = '<h1>NULL<span>//</span>LAB</h1><div class="lab-info">процедурные ассеты · тот же рендер, что в игре</div>';
+left.innerHTML = '<h1>NULL<span>//</span>LAB</h1><div class="lab-info">процедурные ассеты · тот же рендер, что в игре</div><div class="lab-btns" style="margin-top:8px"><a href="./" style="color:var(--cyan);font:700 12px var(--mono);text-decoration:none">← в игру</a></div>';
 left.appendChild(btns('Модели', MODELS.map((m) => m.key), showModel, (k) => k === current.key));
 left.appendChild(btns('Состояние', Object.keys(STATES), (k) => {
   anim.state = STATES[k]!;

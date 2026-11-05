@@ -54,6 +54,11 @@ export class CameraRig {
     const sx = (Math.sin(t * 1.1) + Math.sin(t * 2.3 + 1.7) * 0.5) * tr * 0.9;
     const sy = (Math.sin(t * 1.3 + 4.1) + Math.sin(t * 2.9 + 0.3) * 0.5) * tr * 0.9;
     const roll = Math.sin(t * 0.9 + 2.2) * tr * 0.035;
+    // last line of defence: a non-finite camera renders nothing (black frame)
+    if (!Number.isFinite(this.fx + this.fy)) {
+      this.fx = px;
+      this.fy = py;
+    }
     const cx = this.fx + sx + j.kickX;
     const cz = this.fy + sy + j.kickY;
     this.cam.position.set(cx, this.height, cz + this.back);
