@@ -1018,13 +1018,13 @@ function gearMite(w: World, i: number): void {
   switch (E.st[i]) {
     case AS.Windup: {
       // spin-up: lock a straight roll line at the player's predicted position
-      const L = leadAim(w, E.x[i]!, E.y[i]!, 11, 0.5);
+      const L = leadAim(w, E.x[i]!, E.y[i]!, 13, 0.6);
       faceToward(w, i, datan2(L[1]! - E.y[i]!, L[0]! - E.x[i]!), 8);
       E.charge[i] = Math.min(1, E.stT[i]! / tel(w, 0.6));
       integrate(w, i, 0, 0);
       if (E.stT[i]! >= tel(w, 0.6)) {
         E.aim[i] = E.face[i]!;
-        const v = 11 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+        const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
         E.vx[i] = dcos(E.aim[i]!) * v;
         E.vy[i] = dsin(E.aim[i]!) * v;
         E.burst[i] = 0;
@@ -1034,7 +1034,7 @@ function gearMite(w: World, i: number): void {
       return;
     }
     case AS.Dash: {
-      const v = 11 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+      const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
       if (bounceMove(w, i, v)) E.burst[i] = E.burst[i]! + 1;
       if (E.burst[i]! >= 3 || E.stT[i]! >= 2.5) {
         E.charge[i] = 0;
@@ -1052,12 +1052,14 @@ function gearMite(w: World, i: number): void {
       }
       return;
     default: {
-      // idle: shuffle toward the player
-      if (E.aux[i]! <= 0) E.aux[i] = w.rng.range(0.5, 1.5);
+      // scuttle in at full speed; spin up only once within striking range
+      if (E.aux[i]! <= 0) E.aux[i] = w.rng.range(0.4, 1.1);
       const dv = pathTo(w, i, p.x, p.y, true);
-      integrate(w, i, dv[0]! * 1.5, dv[1]! * 1.5);
+      const d = distToPlayer(w, i);
+      const sp = d > 7 ? speedOf(w, i) : speedOf(w, i) * 0.45;
+      integrate(w, i, dv[0]! * sp, dv[1]! * sp);
       faceToward(w, i, angleToPlayer(w, i), 6);
-      if (E.stT[i]! >= E.aux[i]!) {
+      if (E.stT[i]! >= E.aux[i]! && d < 9) {
         E.aux[i] = 0;
         setState(w, i, AS.Windup);
       }
@@ -1139,8 +1141,9 @@ function arcDrone(w: World, i: number): void {
       integrate(w, i, 0, 0);
       // tracks the player until 75% of the charge, then the bolt's end point is locked
       if (E.stT[i]! < CH * 0.75) {
-        E.tx[i] = p.x;
-        E.ty[i] = p.y;
+        const La = leadAim(w, E.x[i]!, E.y[i]!, 30, 0.8);
+        E.tx[i] = La[0]!;
+        E.ty[i] = La[1]!;
         faceToward(w, i, angleToPlayer(w, i), 6);
       }
       if (E.stT[i]! >= CH) {
@@ -1148,16 +1151,16 @@ function arcDrone(w: World, i: number): void {
         const dx = E.tx[i]! - E.x[i]!;
         const dy = E.ty[i]! - E.y[i]!;
         const l = Math.sqrt(dx * dx + dy * dy) || 1;
-        const reach = Math.min(9, l);
+        const reach = 10;
         const ex = E.x[i]! + (dx / l) * reach;
         const ey = E.y[i]! + (dy / l) * reach;
-        const hit = p.alive && segDist2(p.x, p.y, E.x[i]!, E.y[i]!, ex, ey) < 0.7 * 0.7;
+        const hit = p.alive && segDist2(p.x, p.y, E.x[i]!, E.y[i]!, ex, ey) < 0.85 * 0.85;
         w.events.push(Ev.Arc, E.x[i]!, E.y[i]!, ex, ey, hit ? 1 : 0);
-        if (hit) hurtPlayer(w, 12, E.x[i]!, E.y[i]!, ET.ArcDrone);
+        if (hit) hurtPlayer(w, 16, E.x[i]!, E.y[i]!, ET.ArcDrone);
         if (w.pools.at(ex, ey) >= 0) arcFrom(w, ex, ey, 4, 1, 12, true);
         E.charge[i] = 0;
         releaseToken(w, i);
-        E.cd[i] = 2.0 * cdMul(w);
+        E.cd[i] = 1.6 * cdMul(w);
         setState(w, i, AS.Recover);
       }
       return;
@@ -1275,7 +1278,7 @@ function skiff(w: World, i: number): void {
   }
   // cruise
   const v = speedOf(w, i);
-  faceToward(w, i, angleToPlayer(w, i), 0.785);
+  faceToward(w, i, angleToPlayer(w, i), 1.25);
   E.vx[i] = dcos(E.face[i]!) * v;
   E.vy[i] = dsin(E.face[i]!) * v;
   if (bounceMove(w, i, v)) E.burst[i] = E.burst[i]! + 1;
@@ -1591,12 +1594,13 @@ function assembler(w: World, i: number): void {
   for (let k = 0; k < E.hi && nArms < 4; k++) if (E.alive[k] && E.type[k] === ET.Arm && E.st[k] !== AS.Spawning) arms[nArms++] = k;
   // production line (budgeted by the director's spirit: never flood the arena)
   E.aux[i] = E.aux[i]! + DT;
-  if (E.aux[i]! >= 5 * cdMul(w) && nArms > 0 && E.count < 14) {
+  if (E.aux[i]! >= 3.6 * cdMul(w) && nArms > 0 && E.count < 22) {
     E.aux[i] = 0;
     const a = arms[w.rng.int(nArms)]!;
     if (w.rng.chance(0.5)) {
       spawnEnemy(w, ET.GearMite, clampX(E.x[a]! + 1.5), clampY(E.y[a]! + 1.5));
       spawnEnemy(w, ET.GearMite, clampX(E.x[a]! - 1.5), clampY(E.y[a]! + 1.5));
+      spawnEnemy(w, ET.GearMite, clampX(E.x[a]!), clampY(E.y[a]! + 2.2));
     } else spawnEnemy(w, ET.ArcDrone, clampX(E.x[a]!), clampY(E.y[a]! + 2));
     if (phase >= 2 && w.rng.chance(0.4)) spawnEnemy(w, ET.Hauler, clampX(E.x[a]! + 2), clampY(E.y[a]!));
   }

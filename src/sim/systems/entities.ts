@@ -25,6 +25,22 @@ export interface SpawnOpts {
   hpMul?: number;
 }
 
+/**
+ * Act progression: by Act II/III the player carries 8–15 upgrades, so ordinary enemies grow
+ * tougher and hit harder per act (bosses are tuned directly in the enemy table).
+ */
+export const ACT_HP = [1, 1.2, 1.5] as const;
+export const ACT_DMG = [1, 1.06, 1.18] as const;
+export const ACT_ELITE = [0, 0.06, 0.1] as const;
+export function actHpMul(w: World, type: number): number {
+  if (type === ET.Boss || type === ET.Brood || type === ET.Press || type === ET.Assembler || type === ET.Arm) return 1;
+  return actRamp(w, ACT_HP[w.act] ?? 1);
+}
+/** blend an act multiplier toward 1 by the difficulty's actRamp */
+export function actRamp(w: World, m: number): number {
+  return 1 + (m - 1) * w.diff.actRamp;
+}
+
 export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts?: SpawnOpts): number {
   const E = w.enemies;
   const i = E.free.alloc();
@@ -32,7 +48,7 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   if (i + 1 > E.hi) E.hi = i + 1;
   const def = enemyDef(type);
   const affix = opts?.affix ?? 0;
-  let hp = def.hp * w.diff.hpMul * (opts?.hpMul ?? 1);
+  let hp = def.hp * w.diff.hpMul * (opts?.hpMul ?? 1) * actHpMul(w, type);
   if (affix & Affix.Armored) hp *= 1.8;
   if (affix & Affix.Volatile) hp *= 1.2;
   E.alive[i] = 1;
@@ -97,7 +113,7 @@ export function acquireToken(w: World, i: number): boolean {
   const E = w.enemies;
   if (E.token[i]) return true;
   const D = w.director;
-  if (D.tokensUsed >= D.tokensMax) return false;
+  if (D.tokensUsed >= D.tokensMax + (w.act >= 1 ? 1 : 0)) return false;
   D.tokensUsed++;
   E.token[i] = 1;
   return true;
@@ -300,7 +316,7 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
 export function hurtPlayer(w: World, dmg: number, fromX: number, fromY: number, src = -1): void {
   const p = w.player;
   if (!p.alive || p.inv > 0 || p.dashT > 0 || w.god) return;
-  dmg = Math.min(dmg * w.diff.dmgMul, p.maxHp * w.diff.maxHit);
+  dmg = Math.min(dmg * w.diff.dmgMul * actRamp(w, ACT_DMG[w.act] ?? 1), p.maxHp * w.diff.maxHit);
   p.hp -= dmg;
   p.inv = 0.6;
   p.hurtT = 1;

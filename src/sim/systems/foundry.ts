@@ -19,7 +19,7 @@ export const PAD_MARK = 2.0;
 export const PAD_HOT = 2.8;
 export const PAD_RETRACT = 3.1;
 export const PAD_DMG = 35;
-export const TRACK_ARM = 0.4;
+export const TRACK_ARM = 0.3;
 export const TRACK_LIFE = 2.0;
 export const PYLON_CHARGE = 1.0;
 export const ARC_RANGE = 14;
@@ -294,7 +294,7 @@ function updateTracks(w: World): void {
     t = t < 0 ? 0 : t > 1 ? 1 : t;
     const dx = ax + abx * t - p.x;
     const dy = ay + aby * t - p.y;
-    if (dx * dx + dy * dy < 0.8 * 0.8) hurtPlayer(w, 8, p.x, p.y, 53);
+    if (dx * dx + dy * dy < 0.8 * 0.8) hurtPlayer(w, 10, p.x, p.y, 53);
   }
 }
 

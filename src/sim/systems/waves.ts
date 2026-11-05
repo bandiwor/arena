@@ -7,7 +7,7 @@ import { WAVES } from '../content/waves';
 import { cmdPick, type InputCmd } from '../input';
 import { buildArenaLayout, defaultPhys, WavePhase, type Phys, type World } from '../world';
 import { collidePillars, pushOut } from './physics';
-import { placeSpawn, spawnEnemy } from './entities';
+import { ACT_ELITE, placeSpawn, spawnEnemy } from './entities';
 
 const spawnPos = new Float32Array(2);
 
@@ -47,7 +47,7 @@ export function updateWaves(w: World, cmd: InputCmd): void {
             spawnPos[1] = -3;
           }
           let affix = grp.affix ?? 0;
-          if (affix === 0 && grp.type !== ET.Boss && w.rng.chance(w.diff.eliteChance)) affix = 1 << w.rng.int(3);
+          if (affix === 0 && grp.type !== ET.Boss && w.rng.chance(w.diff.eliteChance + (ACT_ELITE[w.act] ?? 0) * w.diff.actRamp)) affix = 1 << w.rng.int(3);
           spawnEnemy(w, grp.type, spawnPos[0]!, spawnPos[1]!, { affix });
           W.spawned[g] = W.spawned[g]! + 1;
           W.groupNext[g] = W.t + grp.every;
