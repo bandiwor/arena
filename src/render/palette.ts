@@ -1,7 +1,8 @@
 /**
  * NULL//ARENA palette. Colour carries gameplay meaning — never break these rules:
  *  cyan = player & friendly · magenta/pink = hostile · amber = hazard/explosion
- *  violet = energy/elite/boss · lime = pickups & plant life · crimson = flesh
+ *  violet = energy/elite/boss (boss & mini-boss rims) · lime = pickups & plant sap · crimson = flesh
+ *  electricity = violet · floor hazards & impact marks = amber · enemy projectiles/aim lines = magenta
  * Values are sRGB hex; use lin() to get linear floats for shaders.
  */
 export const PAL = {
@@ -23,11 +24,19 @@ export const PAL = {
   fleshBright: 0xff2a3a,
   plant: 0x2f6b1f,
   plantSap: 0xb6ff3b,
+  /** flesh pus / acid: sulphur yellow — must never read as a lime pickup */
+  pus: 0xffd84a,
   machine: 0x2a2d3a,
   machineHot: 0xffa126,
+  // Линия 9 steel tones (all machines share them)
+  steelDark: 0x232833,
+  steel: 0x3a4252,
+  steelLight: 0x5a6478,
   crystal: 0x6e8bff,
   crystalBright: 0xc9d4ff,
   voidMat: 0x120a22,
+  /** elite affix aura: violet = empowered (never lime — lime means pickups) */
+  elite: 0xc77dff,
 } as const;
 
 /** Rarity colours (common → legendary). */

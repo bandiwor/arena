@@ -195,7 +195,7 @@ export function updateEnemies(w: World): void {
         assembler(w, i);
         break;
       case ET.Arm:
-        integrate(w, i, 0, 0);
+        arm(w, i);
         break;
     }
     contact(w, i);
@@ -881,7 +881,7 @@ function parasite(w: World, i: number): void {
   if (E.think[i]! <= 0) {
     E.think[i] = 0.3;
     let best = -1;
-    let bd = 18 * 18;
+    let bd = 1e9;
     for (let k = 0; k < E.activeCount; k++) {
       const j = E.active[k]!;
       const t = E.type[j];
@@ -890,8 +890,12 @@ function parasite(w: World, i: number): void {
       const dx = E.x[j]! - E.x[i]!;
       const dy = E.y[j]! - E.y[i]!;
       const d2 = dx * dx + dy * dy;
-      if (d2 < bd) {
-        bd = d2;
+      if (d2 > 18 * 18) continue;
+      // prefer sturdy hosts (a buffed charger is a threat, a buffed swarmer is a waste)
+      const fodder = t === ET.Swarmer || t === ET.GearMite || t === ET.Bloater;
+      const score = (Math.sqrt(d2) / (1 + E.maxHp[j]! / 40)) * (fodder ? 3 : 1);
+      if (score < bd) {
+        bd = score;
         best = j;
       }
     }
@@ -946,6 +950,32 @@ function brood(w: World, i: number): void {
     if (rage) spawnEnemy(w, ET.Parasite, clampX(E.x[i]! - 3), clampY(E.y[i]! + 3));
     w.events.push(Ev.Birth, E.x[i]!, E.y[i]!, n);
   }
+  // SHOVE: hugging the mother is not safe — a telegraphed contraction throws you off
+  const SHOVE_R = E.r[i]! + 2.4;
+  const pd = distToPlayer(w, i);
+  if (E.ty[i]! > 0) {
+    E.ty[i] = E.ty[i]! + DT;
+    if (E.ty[i]! >= tel(w, 0.7)) {
+      const p = w.player;
+      if (p.alive && p.dashT <= 0 && pd < SHOVE_R) {
+        hurtPlayer(w, 12, E.x[i]!, E.y[i]!, ET.Brood);
+        const a = angleToPlayer(w, i);
+        p.vx += dcos(a) * 18;
+        p.vy += dsin(a) * 18;
+      }
+      w.events.push(Ev.Shockwave, E.x[i]!, E.y[i]!, SHOVE_R);
+      E.ty[i] = 0;
+      E.tx[i] = -2.5; // refractory
+    }
+  } else if (E.tx[i]! < 0) E.tx[i] = Math.min(0, E.tx[i]! + DT);
+  else if (pd < SHOVE_R) {
+    E.tx[i] = E.tx[i]! + DT;
+    if (E.tx[i]! > 0.45) {
+      E.ty[i] = DT;
+      E.tx[i] = 0;
+      w.events.push(Ev.Telegraph, E.x[i]!, E.y[i]!, SHOVE_R, tel(w, 0.7));
+    }
+  } else E.tx[i] = 0;
   // acid volley
   if (E.st[i] === AS.Windup) {
     if (E.stT[i]! >= tel(w, 0.55)) {
@@ -1138,7 +1168,20 @@ function arcDrone(w: World, i: number): void {
   switch (E.st[i]) {
     case AS.Windup: {
       E.charge[i] = Math.min(1, E.stT[i]! / CH);
-      integrate(w, i, 0, 0);
+      // keeps drifting around the target while charging — a stationary charge was a free kill
+      {
+        const rx = (p.x - E.x[i]!) / (d || 1);
+        const ry = (p.y - E.y[i]!) / (d || 1);
+        const s = E.aux2[i]! * speedOf(w, i) * 0.45;
+        integrate(w, i, -ry * s, rx * s);
+        // until the lock it may still side-step a shot
+        E.aux[i] = Math.max(0, E.aux[i]! - DT);
+        if (E.stT[i]! < CH * 0.75 && E.aux[i]! <= 0 && incomingThreat(w, i)) {
+          E.kx[i] = E.kx[i]! + dir[0]! * 8;
+          E.ky[i] = E.ky[i]! + dir[1]! * 8;
+          E.aux[i] = 1.1;
+        }
+      }
       // tracks the player until 75% of the charge, then the bolt's end point is locked
       if (E.stT[i]! < CH * 0.75) {
         const La = leadAim(w, E.x[i]!, E.y[i]!, 30, 0.8);
@@ -1170,17 +1213,24 @@ function arcDrone(w: World, i: number): void {
       if (E.stT[i]! >= 0.3) setState(w, i, AS.Move);
       return;
     default: {
-      // hover at ~6 u, orbiting
+      // hover at ~9 u, orbiting; side-steps incoming fire like a gunner
       const sp = speedOf(w, i);
+      E.aux[i] = Math.max(0, E.aux[i]! - DT);
+      if (E.aux[i]! <= 0 && incomingThreat(w, i)) {
+        E.kx[i] = E.kx[i]! + dir[0]! * 9;
+        E.ky[i] = E.ky[i]! + dir[1]! * 9;
+        E.aux[i] = 1.1;
+        E.aux2[i] = -E.aux2[i]!;
+      }
       const rx = (p.x - E.x[i]!) / (d || 1);
       const ry = (p.y - E.y[i]!) / (d || 1);
       const s = E.aux2[i]!;
-      const radial = Math.max(-1, Math.min(1, (d - 6) * 0.4));
+      const radial = Math.max(-1, Math.min(1, (d - 9) * 0.4));
       integrate(w, i, (-ry * s + rx * radial) * sp, (rx * s + ry * radial) * sp);
       faceToward(w, i, angleToPlayer(w, i), 5);
       if (E.think[i]! <= 0) {
         E.think[i] = 0.25;
-        if (d < 10 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y) && acquireToken(w, i)) setState(w, i, AS.Windup);
+        if (d < 13 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y) && acquireToken(w, i)) setState(w, i, AS.Windup);
       }
     }
   }
@@ -1221,6 +1271,7 @@ function hauler(w: World, i: number): void {
         p.pullGen = E.gen[i]!;
         w.events.push(Ev.HookHit, hx, hy);
         E.charge[i] = 0;
+        E.burst[i] = 1; // hooked: the clamp closes on arrival
         setState(w, i, AS.Recover);
       } else if (E.aux[i]! >= 9) {
         E.charge[i] = 0;
@@ -1228,17 +1279,37 @@ function hauler(w: World, i: number): void {
       }
       return;
     }
-    case AS.Recover:
+    case AS.Recover: {
       // reel: hook retracts at half speed, body exposed (+30%)
       integrate(w, i, 0, 0);
       E.aux[i] = Math.max(0, E.aux[i]! - 9 * DT);
-      if (E.stT[i]! >= 1.2) {
+      // CLAMP: a hooked target that arrives is crushed — telegraphed, a dash still escapes.
+      // burst: 1 = hooked, waiting for arrival · 2 = clamp closing (aim = start time)
+      const CL = tel(w, 0.4);
+      if (E.burst[i] === 1) {
+        if (distToPlayer(w, i) < 2.8) {
+          E.burst[i] = 2;
+          E.aim[i] = E.stT[i]!;
+          w.events.push(Ev.Telegraph, E.x[i]!, E.y[i]!, 2.4, CL);
+        } else if (E.stT[i]! > 1.0) E.burst[i] = 0; // the pull missed its window
+      } else if (E.burst[i] === 2) {
+        E.charge[i] = Math.min(1, (E.stT[i]! - E.aim[i]!) / CL);
+        if (E.charge[i]! >= 1) {
+          if (p.alive && p.dashT <= 0 && distToPlayer(w, i) < 2.4) hurtPlayer(w, 18, E.x[i]!, E.y[i]!, ET.Hauler);
+          w.events.push(Ev.Shockwave, E.x[i]!, E.y[i]!, 2.4);
+          E.charge[i] = 0;
+          E.burst[i] = 0;
+        }
+      }
+      if (E.stT[i]! >= 1.2 && E.burst[i] === 0) {
         releaseToken(w, i);
         E.cd[i] = 3 * cdMul(w);
         E.aux[i] = 0;
+        E.charge[i] = 0;
         setState(w, i, AS.Move);
       }
       return;
+    }
     default: {
       // stalk at 9–12 u
       const sp = speedOf(w, i);
@@ -1350,6 +1421,14 @@ function overseer(w: World, i: number): void {
       const radial = d < 10 ? -1 : d > 15 ? 0.6 : 0;
       integrate(w, i, (rx * radial - ry * E.aux2[i]! * 0.5) * sp, (ry * radial + rx * E.aux2[i]! * 0.5) * sp);
       faceToward(w, i, angleToPlayer(w, i), 2);
+      // too close: call the line's press down on the intruder (a telegraphed square mark)
+      if (d < 7 && E.cd[i]! <= 0 && p.alive) {
+        const mx = clampX(p.x + p.vx * 0.5);
+        const my = clampY(p.y + p.vy * 0.5);
+        w.marks.add(mx, my, 1.4, tel(w, 1.1), 0.3, 25, ET.Overseer, true);
+        w.events.push(Ev.PadWarn, mx, my);
+        E.cd[i] = 3.5 * cdMul(w);
+      }
       E.aux[i] = E.aux[i]! + DT;
       if (E.aux[i]! >= 6 * cdMul(w)) setState(w, i, AS.Windup);
     }
@@ -1682,3 +1761,41 @@ function assembler(w: World, i: number): void {
   }
 }
 const scratchArms = new Int32Array(4);
+
+// ───────────────────────────── ASSEMBLER arm: tracks the intruder, sweeps whoever gets close
+function arm(w: World, i: number): void {
+  const E = w.enemies;
+  const p = w.player;
+  integrate(w, i, 0, 0);
+  const d = distToPlayer(w, i);
+  const R = E.r[i]! + 3.1;
+  switch (E.st[i]) {
+    case AS.Windup: {
+      const W = tel(w, 0.75);
+      E.charge[i] = Math.min(1, E.stT[i]! / W);
+      faceToward(w, i, angleToPlayer(w, i), 0.8);
+      if (E.stT[i]! >= W) {
+        if (p.alive && p.dashT <= 0 && d < R) {
+          hurtPlayer(w, 16, E.x[i]!, E.y[i]!, ET.Arm);
+          const a = angleToPlayer(w, i);
+          p.vx += dcos(a) * 14;
+          p.vy += dsin(a) * 14;
+        }
+        w.events.push(Ev.Shockwave, E.x[i]!, E.y[i]!, R);
+        E.charge[i] = 0;
+        E.cd[i] = 2.4 * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Recover:
+      if (E.stT[i]! >= 0.5) setState(w, i, AS.Move);
+      return;
+    default:
+      faceToward(w, i, angleToPlayer(w, i), 1.2);
+      if (d < R && E.cd[i]! <= 0 && p.alive) {
+        setState(w, i, AS.Windup);
+        w.events.push(Ev.Telegraph, E.x[i]!, E.y[i]!, R, tel(w, 0.75));
+      }
+  }
+}

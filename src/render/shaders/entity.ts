@@ -1,7 +1,7 @@
 import { ShaderMaterial, Vector3 } from 'three';
 import { LIGHTS, NOISE } from './chunks';
 import type { LightPool } from '../lights';
-import { lin } from '../palette';
+import { lin, PAL } from '../palette';
 
 /**
  * Entity material: flat-shaded low-poly, key + hemi + pooled point lights, team-coloured rim,
@@ -106,6 +106,7 @@ uniform vec3 uRim;
 uniform vec3 uElite;
 uniform float uCorrupt;
 uniform float uEmitBoost;
+uniform float uOvergrow; // Act II: non-flesh samples overgrown by the sector's tissue
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vCol;
@@ -156,6 +157,18 @@ void main(){
     float pulse = 0.6 + 0.4 * sin(uTime * 6.0 + vW.y * 4.0);
     col += uElite * fres * 3.0 * pulse;
   }
+  // overgrowth: patches of crimson tissue with pulsing veins (heartbeat in sync with the floor)
+  if(uOvergrow > 0.0){
+    float patchN = vnoise(vObj.xz * 2.1 + vObj.y * 1.7 + 11.0);
+    float mask = smoothstep(0.3, 0.58, patchN) * uOvergrow;
+    vec3 tissue = vec3(0.16, 0.012, 0.024) * (hemi + diff * 0.8 + lights) * 3.0;
+    col = mix(col, tissue, mask * 0.85);
+    col += vec3(0.5, 0.02, 0.07) * fres * mask * 1.5; // wet sheen at the silhouette
+    float v = vnoise(vObj.xy * 6.0 + vObj.z * 4.0);
+    float vein = smoothstep(0.07, 0.0, abs(v - 0.5)) * mask;
+    float hb = pow(max(0.0, sin(uTime * 2.2)), 12.0);
+    col += vec3(1.6, 0.08, 0.2) * vein * (0.5 + hb * 1.2);
+  }
   // boss corruption: flickering inverted facets
   if(uCorrupt > 0.0){
     float c = hash13(floor(vObj * 4.0) + floor(uTime * 12.0) * vec3(1.7, 3.1, 5.3));
@@ -175,7 +188,7 @@ export function makeEntityMaterial(lights: LightPool, rimHex: number, height: nu
   lin(rimHex, a);
   rim.set(a[0]!, a[1]!, a[2]!);
   const el = new Float32Array(3);
-  lin(0xd8ff5a, el);
+  lin(PAL.elite, el);
   return new ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -186,6 +199,7 @@ export function makeEntityMaterial(lights: LightPool, rimHex: number, height: nu
       uElite: { value: new Vector3(el[0], el[1], el[2]) },
       uCorrupt: { value: 0 },
       uEmitBoost: { value: 1 },
+      uOvergrow: { value: 0 },
       ...lights.uniforms,
     },
   });

@@ -8,7 +8,7 @@ import {
   type BufferGeometry,
   type Scene,
 } from 'three';
-import { AS, ENEMY_TYPE_COUNT, ET, MAX_ENEMIES } from '../sim/constants';
+import { AS, ENEMY_TYPE_COUNT, ET, Mat, MAX_ENEMIES } from '../sim/constants';
 import { TRANS_SYNTH } from '../sim/systems/waves';
 import { WavePhase } from '../sim/world';
 
@@ -315,6 +315,9 @@ export class EntityRenderer {
     }
     for (const m of this.enemies) m.end(time);
     this.enemies[ET.Boss]!.material.uniforms['uCorrupt']!.value = corruption;
+    // Act II: samples carried over from the quarantine are overgrown by the flesh sector
+    const og = w.act === 1 ? 1 : 0;
+    for (let t = 0; t < this.enemies.length; t++) this.enemies[t]!.material.uniforms['uOvergrow']!.value = enemyDef(t).material === Mat.Flesh ? 0 : og;
 
     for (let g = 0; g < PGHOSTS; g++) if (this.pgT[g]! > 0) this.pgT[g] = this.pgT[g]! - dt;
     // player

@@ -59,7 +59,7 @@ const C_HAZ = new Float32Array(3);
 const C_ENERGY = new Float32Array(3);
 const C_PICK = new Float32Array(3);
 const C_MUT = new Float32Array(3);
-const C_PUS = new Float32Array([0.9, 2.4, 0.3]);
+const C_PUS = new Float32Array([2.6, 1.9, 0.22]); // sulphur — distinct from lime pickups
 const C_FLESH = new Float32Array([2.6, 0.18, 0.4]);
 const C_GORE = new Float32Array([0.24, 0.005, 0.012]);
 const C_SOIL = new Float32Array([0.06, 0.02, 0.02]);
@@ -1140,8 +1140,8 @@ export class FxDirector {
           Qb.push(QK.Orb, QM.Billboard, x, 1.1, y, 0, 1.15, 1.15, 2.2, 0.5, 3.2, 0, 0, i);
           break;
         case BK.Acid:
-          Qb.push(QK.Orb, QM.Billboard, x, h0 + (0.7 - h0) * ease, y, 0, 0.75, 0.75, 2.6, 1.0, 0.7, 0, 0, i);
-          if ((i + w.tick) % 3 === 0) P.emit(x, 0.6, y, r.sym(), 0.5, r.sym(), 0.35, 0.6, 1.8, 0.2, 0.1, 2, 6, PS.Blood, 0.4);
+          Qb.push(QK.Orb, QM.Billboard, x, h0 + (0.7 - h0) * ease, y, 0, 0.75, 0.75, 2.8, 2.0, 0.3, 0, 0, i);
+          if ((i + w.tick) % 3 === 0) P.emit(x, 0.6, y, r.sym(), 0.5, r.sym(), 0.35, 1.9, 1.4, 0.15, 0.1, 2, 6, PS.Blood, 0.4);
           break;
         case BK.Shard:
           Qb.push(QK.Shard, QM.Ground, x, h0 + (0.9 - h0) * ease, y, a, 0.75, 0.55, C_ENEMY_B[0]! * 3, C_ENEMY_B[1]! * 3, C_ENEMY_B[2]! * 3, 0, 0, i);
@@ -1227,7 +1227,7 @@ export class FxDirector {
           const pulse = 0.6 + 0.4 * Math.sin(time * (10 + ch * 30));
           Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 6.4, 6.4, C_ENEMY[0]! * 1.8 * pulse, C_ENEMY[1]! * 1.8 * pulse, C_ENEMY[2]! * 1.8 * pulse, 0, ch, i);
           L.add(x, y, 1.2, 3 + ch * 5, (1 + ch * 2) * pulse, ch * 2 * pulse, 0.6 * pulse);
-          if (r.chance(0.5)) P.emit(x + r.sym() * 0.6, 1.0 + r.float() * 0.6, y + r.sym() * 0.6, r.sym() * 2, r.range(1, 3), r.sym() * 2, 0.5, 0.9, 2.4, 0.3, 0.1, 1, 14, PS.Blood, 0.4);
+          if (r.chance(0.5)) P.emit(x + r.sym() * 0.6, 1.0 + r.float() * 0.6, y + r.sym() * 0.6, r.sym() * 2, r.range(1, 3), r.sym() * 2, 0.5, 2.6, 1.9, 0.22, 0.1, 1, 14, PS.Blood, 0.4);
         } else if (type === ET.Dart) {
           const a = E.aim[i]!;
           Qb.push(QK.TeleLine, QM.Ground, x + Math.cos(a) * 4.5, 0.07, y + Math.sin(a) * 4.5, a, 9, 0.35, C_ENEMY[0]! * 2, C_ENEMY[1]! * 2, C_ENEMY[2]! * 2, 0, ch, i);
@@ -1264,7 +1264,7 @@ export class FxDirector {
         continue;
       }
       // elite aura motes
-      if (E.affix[i] && r.chance(0.25)) P.emit(x + r.sym() * def.r, 0.2, y + r.sym() * def.r, 0, r.range(1, 3), 0, 0.6, 1.5, 2.2, 0.3, 0.1, 1, 0, PS.Ember, 0);
+      if (E.affix[i] && r.chance(0.25)) P.emit(x + r.sym() * def.r, 0.2, y + r.sym() * def.r, 0, r.range(1, 3), 0, 0.6, 1.9, 0.75, 3.2, 0.1, 1, 0, PS.Ember, 0);
       // heavily wounded flesh drips
       if ((def.material === Mat.Flesh || def.material === Mat.Plant) && E.hp[i]! < E.maxHp[i]! * 0.4 && r.chance(0.08)) {
         const g = GORE[def.material]!;

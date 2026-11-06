@@ -139,7 +139,7 @@ export class Menus {
     this.main.innerHTML = `<div class="mm">
       <div class="mm-left">
         <h1 class="title">NULL<span>//</span>ARENA</h1>
-        <div class="sub">3 АКТА · ${WAVES.length} ВОЛН · АРХИВ «ВЕКТОР»</div>
+        <div class="sub">3 АКТА · ${WAVES.length} ВОЛН · ПРОЦЕСС «ВЕКТОР»</div>
         <div class="stack">
           ${button('В бой', { variant: 'primary', size: 'lg', action: 'start', wide: true, icon: '▶', accent: DIFF_COLORS[s.difficulty] })}
           ${hasReplay ? button('Последний реплей', { action: 'replay', wide: true, icon: '⟲' }) : ''}

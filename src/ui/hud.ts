@@ -145,7 +145,10 @@ export class Hud {
         const last = idx === WAVES.length - 1 || (WAVES[idx + 1]?.act ?? 0) !== aw.act;
         this.showBanner(boss ? (def?.name ?? 'БОСС') : `ВОЛНА ${aw.n}`, boss ? `АКТ ${ROMAN[aw.act]} · ${last ? 'ФИНАЛ' : 'СТРАЖ ЛИНИИ'}` : (def?.name.toUpperCase() ?? ''), col2, 2.2);
         // archive note for this wave, typed into the terminal log
-        if (def?.lore && this.logT < 0) this.startLines([[1.2, `> ${def.lore}`]], 6.5);
+        if (def?.lore) {
+          if (this.logT < 0) this.startLines([[1.2, `> ${def.lore}`]], 6.5);
+          else this.pendingLore = def.lore; // the act-transition log is still typing: show it right after
+        }
         break;
       }
       case Ev.ActTransition:
@@ -325,6 +328,7 @@ export class Hud {
   }
 
   private logEnd = 10.5;
+  private pendingLore: string | null = null;
   private startLines(lines: readonly (readonly [number, string])[], end: number): void {
     this.logLines = lines;
     this.logEnd = end;
@@ -352,11 +356,17 @@ export class Hud {
     if (this.logT > this.logEnd) {
       this.log.classList.add('hidden');
       this.logT = -1;
+      if (this.pendingLore) {
+        const l = this.pendingLore;
+        this.pendingLore = null;
+        this.startLines([[0.4, `> ${l}`]], 5.5);
+      }
     }
   }
 
   reset(): void {
     this.logT = -1;
+    this.pendingLore = null;
     this.logFor = -1;
     this.log.classList.add('hidden');
     this.bossWho = -2;

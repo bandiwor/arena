@@ -376,7 +376,7 @@ const bloater: ModelDef = {
       const px = Math.cos(a) * Math.cos(el) * R;
       const pz = Math.sin(a) * Math.cos(el) * R;
       const py = cy + Math.sin(el) * R * 0.92;
-      b.add(new SphereGeometry(0.07 + (k % 3) * 0.025, 6, 4), { color: k % 2 ? PAL.enemy : 0xd8ff5a, emit: 0.9, part: Part.Core, param: 0.6, pos: [px, py, pz], pivot: [0, cy, 0] });
+      b.add(new SphereGeometry(0.07 + (k % 3) * 0.025, 6, 4), { color: k % 2 ? PAL.enemy : PAL.pus, emit: 0.9, part: Part.Core, param: 0.6, pos: [px, py, pz], pivot: [0, cy, 0] });
     }
     // tiny mouth and eye stalks at the front
     b.add(new TorusGeometry(0.12, 0.04, 4, 8), { color: 0x2a0408, pos: [R * 0.95, cy - 0.05, 0], rot: [0, Math.PI / 2, 0] });
@@ -467,7 +467,7 @@ const parasite: ModelDef = {
     const R = p['body']!;
     b.add(new SphereGeometry(R, 8, 6), { color: 0x4a1a1c, pos: [0.1, 0.28, 0], scale: [1.1, 0.55, 0.95] });
     // engorged abdomen: glows brighter as it feeds (charge/buff)
-    b.add(new SphereGeometry(R * 1.05, 8, 6), { color: 0xd8ff5a, emit: 0.55, part: Part.Core, param: 0.4, pos: [-R * 0.9, 0.32, 0], scale: [1.2, 0.8, 1], pivot: [-R * 0.9, 0.32, 0] });
+    b.add(new SphereGeometry(R * 1.05, 8, 6), { color: PAL.pus, emit: 0.55, part: Part.Core, param: 0.4, pos: [-R * 0.9, 0.32, 0], scale: [1.2, 0.8, 1], pivot: [-R * 0.9, 0.32, 0] });
     b.add(new SphereGeometry(R * 0.08 + 0.03, 4, 3), { color: PAL.enemy, emit: 1, pos: [R * 1.1, 0.34, 0.08] });
     b.add(new SphereGeometry(R * 0.08 + 0.03, 4, 3), { color: PAL.enemy, emit: 1, pos: [R * 1.1, 0.34, -0.08] });
     for (const z of [-1, 1]) b.add(new ConeGeometry(0.035, 0.22, 3), { color: 0xd8c8b0, pos: [R * 1.25, 0.24, z * 0.06], rot: [0, 0, -Math.PI / 2 - 0.4], part: Part.Petal, param: 0.6, pivot: [R, 0.24, 0] });
@@ -486,7 +486,7 @@ const brood: ModelDef = {
   key: 'brood',
   name: 'МАТКА (мини-босс)',
   height: 3.4,
-  rim: PAL.enemy,
+  rim: PAL.energy,
   params: { mass: P(2.2, 1.4, 3), eggs: P(22, 6, 40, 1), tentacles: P(8, 0, 14, 1) },
   build(p) {
     const b = new ModelBuilder();
@@ -503,7 +503,7 @@ const brood: ModelDef = {
       const ex = Math.cos(a) * Math.cos(el) * R * 0.98;
       const ez = Math.sin(a) * Math.cos(el) * R * 0.98;
       const ey = cy + Math.sin(el) * R * 0.78;
-      b.add(new SphereGeometry(0.16 + (k % 4) * 0.05, 6, 5), { color: k % 3 ? 0xd8ff5a : PAL.enemy, emit: 0.85, part: Part.Core, param: 0.55, pos: [ex, ey, ez], scale: [1, 1.3, 1], pivot: [ex, ey, ez] });
+      b.add(new SphereGeometry(0.16 + (k % 4) * 0.05, 6, 5), { color: k % 3 ? PAL.pus : PAL.enemy, emit: 0.85, part: Part.Core, param: 0.55, pos: [ex, ey, ez], scale: [1, 1.3, 1], pivot: [ex, ey, ez] });
     }
     // maw facing the player (+x)
     b.add(new TorusGeometry(0.55, 0.14, 5, 14), { color: 0x3a060c, pos: [R * 0.85, cy * 1.05, 0], rot: [0, Math.PI / 2, 0] });
@@ -548,7 +548,7 @@ const growth: ModelDef = {
       const a = k * 2.4;
       const yy = 0.4 + (k / Math.max(1, m)) * (y - 0.6);
       const rr = 0.95 - (yy / y) * 0.5;
-      b.add(new SphereGeometry(0.1 + (k % 3) * 0.04, 5, 4), { color: k % 2 ? 0xd8ff5a : PAL.enemy, emit: 0.9, part: Part.Core, param: 0.3, pos: [Math.cos(a) * rr, yy, Math.sin(a) * rr], pivot: [Math.cos(a) * rr, yy, Math.sin(a) * rr] });
+      b.add(new SphereGeometry(0.1 + (k % 3) * 0.04, 5, 4), { color: k % 2 ? PAL.pus : PAL.enemy, emit: 0.9, part: Part.Core, param: 0.3, pos: [Math.cos(a) * rr, yy, Math.sin(a) * rr], pivot: [Math.cos(a) * rr, yy, Math.sin(a) * rr] });
     }
     // glowing vein ring at the base
     b.add(new TorusGeometry(1.05, 0.05, 3, 18), { color: PAL.enemy, emit: 0.7, pos: [0, 0.08, 0], rot: [Math.PI / 2, 0, 0] });
@@ -557,9 +557,9 @@ const growth: ModelDef = {
 };
 
 // ═════════════════════════════ Акт III · ЛИТЕЙНЫЙ ЦЕХ ═════════════════════════════
-const STEEL = 0x3a4252;
-const STEEL_D = 0x232833;
-const STEEL_L = 0x5a6478;
+const STEEL = PAL.steel;
+const STEEL_D = PAL.steelDark;
+const STEEL_L = PAL.steelLight;
 
 const mite: ModelDef = {
   key: 'mite',
@@ -667,7 +667,7 @@ const skiffM: ModelDef = {
       b.add(new ConeGeometry(0.06, 0.2, 3), { color: k % 3 ? STEEL_L : PAL.hazard, emit: k % 3 ? 0.1 : 0.8, pos: [Math.cos(a) * (R + 0.06), h, Math.sin(a) * (R + 0.06)], rot: [0, -a, -Math.PI / 2], ...spin });
     }
     b.add(new BoxGeometry(0.4, 0.22, 0.3), { color: STEEL_D, pos: [0, h + 0.14, 0] });
-    b.add(new SphereGeometry(0.07, 5, 4), { color: PAL.enemy, emit: 1, pos: [0.18, h + 0.24, 0] });
+    b.add(new SphereGeometry(0.09, 6, 4), { color: PAL.enemy, emit: 1, part: Part.Core, param: 0.9, pos: [0.18, h + 0.26, 0], pivot: [0.18, h + 0.26, 0] });
     return b.build();
   },
 };
@@ -698,7 +698,7 @@ const pressM: ModelDef = {
   key: 'press',
   name: 'ПРЕСС (мини-босс)',
   height: 4.5,
-  rim: PAL.hazard,
+  rim: PAL.energy,
   params: { head: P(2.2, 1.4, 3), column: P(1.6, 1, 2.4) },
   build(p) {
     const b = new ModelBuilder();

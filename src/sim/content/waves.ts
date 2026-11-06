@@ -19,7 +19,7 @@ export interface WaveDef {
   /** mutator key or undefined */
   readonly mutator?: string;
   readonly boss?: boolean;
-  /** 0 = Акт I «Карантин», 1 = Акт II «Плоть» */
+  /** 0 = Акт I «Карантин», 1 = Акт II «Плоть», 2 = Акт III «Литейный цех» */
   readonly act?: number;
   /** short archive line shown under the wave banner */
   readonly lore?: string;
@@ -28,6 +28,7 @@ export interface WaveDef {
 export const WAVES: readonly WaveDef[] = [
   {
     name: 'Пробуждение',
+    lore: 'Карантин NULL: образцы разморожены. Тест начинается.',
     groups: [
       { type: ET.Swarmer, count: 7, at: 0.5, every: 0.35, place: 'edge' },
       { type: ET.Bloater, count: 2, at: 3.5, every: 1.5, place: 'far' },
@@ -37,6 +38,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Жала',
+    lore: 'Дроны линии 9 переданы на охрану карантина.',
     groups: [
       { type: ET.Swarmer, count: 8, at: 0.5, every: 0.3, place: 'edge' },
       { type: ET.Dart, count: 4, at: 2.5, every: 0.6, place: 'ring' },
@@ -47,6 +49,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Шипы',
+    lore: 'Оранжерея прислала стрелков. Не стой на открытом месте.',
     groups: [
       { type: ET.Archer, count: 3, at: 0.5, every: 0.8, place: 'far' },
       { type: ET.Swarmer, count: 10, at: 2, every: 0.25, place: 'edge' },
@@ -59,6 +62,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Холодная стена',
+    lore: 'Решётка держит строй. Призма поворачивается медленно.',
     groups: [
       { type: ET.Shielder, count: 2, at: 0.5, every: 1.5, place: 'ring' },
       { type: ET.Archer, count: 4, at: 1.5, every: 0.6, place: 'far' },
@@ -69,6 +73,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Притяжение',
+    lore: 'Гравитация архива нестабильна. Траектории гнутся.',
     groups: [
       { type: ET.Charger, count: 3, at: 0.5, every: 3, place: 'far' },
       { type: ET.Gunner, count: 4, at: 2, every: 0.8, place: 'ring' },
@@ -79,6 +84,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Эхо',
+    lore: 'Стены отражают. Каждый выстрел вернётся.',
     groups: [
       { type: ET.Gunner, count: 5, at: 0.5, every: 0.6, place: 'ring' },
       { type: ET.Shielder, count: 2, at: 1, every: 1, place: 'ring' },
@@ -90,6 +96,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Элита',
+    lore: 'Хранитель усилил образцы. Фиолетовое свечение — элита.',
     groups: [
       { type: ET.Charger, count: 2, at: 0.5, every: 2, place: 'far', affix: Affix.Armored },
       { type: ET.Gunner, count: 4, at: 2, every: 0.8, place: 'ring', affix: Affix.Fast },
@@ -101,6 +108,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Шторм',
+    lore: 'Все штаммы карантина разом. Последний фильтр перед стражем.',
     groups: [
       { type: ET.Swarmer, count: 24, at: 0.5, every: 0.15, place: 'edge' },
       { type: ET.Shielder, count: 3, at: 2, every: 1, place: 'ring' },
@@ -114,12 +122,14 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'МОНОЛИТ',
+    lore: 'Страж карантина. Пустота, собранная в форму.',
     groups: [{ type: ET.Boss, count: 1, at: 1.5, every: 0, place: 'ring' }],
     boss: true,
   },
   // ─────────────── Акт II · ПЛОТЬ (denser than late Act I: the player carries ~8 upgrades now)
   {
     name: 'Под кожей',
+    lore: 'Материя карантина проросла плотью. Старые образцы — тоже.',
     act: 1,
     groups: [
       { type: ET.Swarmer, count: 14, at: 0.5, every: 0.2, place: 'edge' },
@@ -133,6 +143,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Паразиты',
+    lore: 'Светлячки ищут самых крепких носителей. Сбивай их первыми.',
     act: 1,
     groups: [
       { type: ET.Charger, count: 2, at: 0.5, every: 2, place: 'far' },
@@ -147,6 +158,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'Глубина',
+    lore: 'Черви плывут туда, где ты будешь, а не туда, где ты есть.',
     act: 1,
     groups: [
       { type: ET.Worm, count: 6, at: 0.5, every: 1, place: 'ring' },
@@ -162,6 +174,7 @@ export const WAVES: readonly WaveDef[] = [
   },
   {
     name: 'МАТКА',
+    lore: 'Мать сектора. Пока она жива, рождение не остановить.',
     act: 1,
     groups: [
       { type: ET.Brood, count: 1, at: 1.5, every: 0, place: 'far' },
@@ -180,7 +193,7 @@ export const WAVES: readonly WaveDef[] = [
       { type: ET.GearMite, count: 12, at: 0.5, every: 0.2, place: 'lanes' },
       { type: ET.Gunner, count: 3, at: 5, every: 0.7, place: 'ring' },
       { type: ET.GearMite, count: 10, at: 9, every: 0.2, place: 'edge' },
-      { type: ET.Swarmer, count: 14, at: 13, every: 0.18, place: 'far' },
+      { type: ET.GearMite, count: 14, at: 13, every: 0.18, place: 'far' },
       { type: ET.Dart, count: 5, at: 16, every: 0.4, place: 'ring' },
       { type: ET.GearMite, count: 12, at: 19, every: 0.2, place: 'lanes' },
     ],
@@ -193,10 +206,10 @@ export const WAVES: readonly WaveDef[] = [
       { type: ET.Stamper, count: 3, at: 0.5, every: 1.2, place: 'corners' },
       { type: ET.GearMite, count: 10, at: 3, every: 0.2, place: 'lanes' },
       { type: ET.Gunner, count: 4, at: 7, every: 0.6, place: 'ring' },
-      { type: ET.Shielder, count: 2, at: 10, every: 1, place: 'ring' },
+      { type: ET.ArcDrone, count: 2, at: 10, every: 0.8, place: 'ring' },
       { type: ET.GearMite, count: 12, at: 13, every: 0.2, place: 'edge' },
       { type: ET.Stamper, count: 2, at: 16, every: 1, place: 'far', affix: Affix.Armored },
-      { type: ET.Charger, count: 2, at: 19, every: 1.5, place: 'far' },
+      { type: ET.Hauler, count: 2, at: 19, every: 2, place: 'far' },
     ],
     mutator: 'lockstep',
   },
@@ -210,8 +223,9 @@ export const WAVES: readonly WaveDef[] = [
       { type: ET.Stamper, count: 2, at: 7, every: 1, place: 'far' },
       { type: ET.Gunner, count: 3, at: 10, every: 0.7, place: 'ring' },
       { type: ET.ArcDrone, count: 3, at: 14, every: 0.6, place: 'ring' },
-      { type: ET.Swarmer, count: 16, at: 16, every: 0.15, place: 'edge' },
+      { type: ET.GearMite, count: 14, at: 16, every: 0.15, place: 'edge' },
       { type: ET.Hauler, count: 1, at: 19, every: 0, place: 'far' },
+      { type: ET.Overseer, count: 1, at: 22, every: 0, place: 'far' },
     ],
     mutator: 'flood',
   },
@@ -240,6 +254,7 @@ export const WAVES: readonly WaveDef[] = [
       { type: ET.Press, count: 1, at: 1.5, every: 0, place: 'far' },
       { type: ET.GearMite, count: 8, at: 8, every: 0.3, place: 'lanes' },
       { type: ET.GearMite, count: 8, at: 20, every: 0.3, place: 'lanes' },
+      { type: ET.Skiff, count: 1, at: 24, every: 0, place: 'edge' },
       { type: ET.ArcDrone, count: 2, at: 30, every: 0.8, place: 'ring' },
     ],
     mutator: 'magnetic',
