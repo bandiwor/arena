@@ -25,7 +25,7 @@ export interface TrainCfg {
   /** initial exploration step */
   sigma: number;
 }
-export const DEFAULT_CFG: TrainCfg = { difficulty: 2, stage: 'mixed', seconds: 60, seeds: 3, lambda: 12, sigma: 0.6 };
+export const DEFAULT_CFG: TrainCfg = { difficulty: 4, stage: 'mixed', seconds: 60, seeds: 3, lambda: 12, sigma: 0.6 };
 
 export interface GenStat {
   gen: number;

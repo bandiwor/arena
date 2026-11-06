@@ -156,7 +156,7 @@ export class Menus {
       </div>
       <div class="mm-right">
         <h4 class="mm-h">СЛОЖНОСТЬ</h4>
-        <div class="mm-diffs">${DIFFICULTIES.map((d, i) => card({ title: d.name, body: d.desc, accent: DIFF_COLORS[i]!, selected: i === s.difficulty, data: { d: i }, tag: ['мягко', 'задумано', 'жёстко', 'предел'][i] ?? '' })).join('')}</div>
+        <div class="mm-diffs">${DIFFICULTIES.map((d, i) => card({ title: d.name, body: d.desc, accent: DIFF_COLORS[i]!, selected: i === s.difficulty, data: { d: i }, tag: d.tag })).join('')}</div>
         <div class="mm-seed"><span>ИТЕРАЦИЯ (SEED)</span>${textField('seed', String(this.seed))}<small>один seed — один и тот же забег</small></div>
       </div>
       <div class="mm-help help"><span class="kb">${kbd('WASD')} движение · ${kbd('ЛКМ')} огонь · ${kbd('SPACE')} рывок · ${kbd('Q')}${kbd('E')} оружие · ${kbd('ESC')} пауза</span><span class="tc">левый стик — движение · правый — прицел и огонь · РЫВОК — кнопка или двойное касание слева</span></div>

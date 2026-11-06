@@ -19,7 +19,7 @@ import { generation, WorkerPool } from './trainer';
  * what "better" means; models are saved in the browser, exported as JSON and watchable in the game.
  */
 const root = document.getElementById('train')!;
-const DIFF_COLORS = ['#5cff9b', '#2ef2ff', '#ffa126', '#ff2d7a'];
+const DIFF_COLORS = DIFFICULTIES.map((d) => d.color);
 const cores = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
 
 let models = listModels();

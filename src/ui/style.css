@@ -525,3 +525,6 @@ body.kit-page { background: radial-gradient(ellipse at top, #120c26, var(--void)
 .dbg-sub h5 { margin: 0 0 4px; font: 700 10px var(--mono); letter-spacing: 0.18em; color: var(--sc, var(--cyan)); text-transform: uppercase; }
 .dbg-sub h5 small { color: var(--muted); font-weight: 400; letter-spacing: 0; }
 .dbg-sub button:hover { border-color: var(--sc, var(--cyan)); color: var(--sc, var(--cyan)); }
+
+/* five difficulties: the last card (bot level) spans the row */
+.mm-diffs .k-card:nth-child(5):last-child { grid-column: 1 / -1; min-height: 0; }

@@ -3,7 +3,7 @@ import { DIFFICULTIES } from '../sim/content/difficulty';
 import { bindKit, button, iconButton, kbd, pct, row, section, segmented, slider, tabs, toggle, type KitValue } from './kit';
 import { applySettings, DEFAULT_TOUCH, defaultSettings, saveSettings, type Place, type Settings, type TouchLayout } from './settings';
 
-export const DIFF_COLORS = ['#5cff9b', '#2ef2ff', '#ffa126', '#ff2d7a'];
+export const DIFF_COLORS = DIFFICULTIES.map((d) => d.color);
 type TabId = 'sound' | 'game' | 'gfx' | 'controls';
 const TABS = [
   { id: 'sound', label: 'Звук', icon: '♪' },

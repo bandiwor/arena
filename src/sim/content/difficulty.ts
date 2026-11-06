@@ -4,6 +4,10 @@ export interface DifficultyDef {
   readonly name: string;
   readonly desc: string;
   readonly hpMul: number;
+  /** UI accent */
+  readonly color: string;
+  /** short tag on the menu card */
+  readonly tag: string;
   /** how strongly later acts ramp enemy HP/damage (0 = flat, 1 = full ramp) */
   readonly actRamp: number;
   readonly dmgMul: number;
@@ -31,10 +35,13 @@ export interface DifficultyDef {
  * take more than `maxHit` of the player's health.
  */
 export const DIFFICULTIES: readonly DifficultyDef[] = [
-  { id: 0, key: 'easy', actRamp: 0.35, name: 'Сигнал', desc: 'Мягкий вход: медленные замахи, неточные враги, много лечения.', hpMul: 0.8, dmgMul: 0.7, countMul: 0.85, bulletSpeedMul: 0.9, aimErr: 1.6, tokens: 2, cdMul: 1.25, teleMul: 1.2, eliteChance: 0, playerHp: 120, dropMul: 1.5, maxHit: 0.2, waveHeal: 0.25 },
-  { id: 1, key: 'normal', actRamp: 1, name: 'Шум', desc: 'Задуманный баланс.', hpMul: 1, dmgMul: 0.9, countMul: 1, bulletSpeedMul: 1, aimErr: 1, tokens: 3, cdMul: 1, teleMul: 1, eliteChance: 0.05, playerHp: 100, dropMul: 1, maxHit: 0.25, waveHeal: 0.18 },
-  { id: 2, key: 'hard', actRamp: 1, name: 'Помехи', desc: 'Плотнее и быстрее: больше врагов атакуют разом, замахи короче, элиты.', hpMul: 1.08, dmgMul: 1.1, countMul: 1.15, bulletSpeedMul: 1.06, aimErr: 0.85, tokens: 3, cdMul: 0.9, teleMul: 0.92, eliteChance: 0.1, playerHp: 100, dropMul: 0.95, maxHit: 0.25, waveHeal: 0.12 },
-  { id: 3, key: 'nightmare', actRamp: 0.9, name: 'NULL', desc: 'Темп на пределе реакции. Читай телеграфы — каждый удар можно избежать.', hpMul: 1.1, dmgMul: 1.15, countMul: 1.22, bulletSpeedMul: 1.12, aimErr: 0.72, tokens: 4, cdMul: 0.8, teleMul: 0.85, eliteChance: 0.13, playerHp: 100, dropMul: 0.9, maxHit: 0.25, waveHeal: 0.1 },
+  { id: 0, key: 'easy', color: '#5cff9b', tag: 'мягко', actRamp: 0.35, name: 'Сигнал', desc: 'Мягкий вход: медленные замахи, неточные враги, много лечения.', hpMul: 0.8, dmgMul: 0.7, countMul: 0.85, bulletSpeedMul: 0.9, aimErr: 1.6, tokens: 2, cdMul: 1.25, teleMul: 1.2, eliteChance: 0, playerHp: 120, dropMul: 1.5, maxHit: 0.2, waveHeal: 0.25 },
+  { id: 1, key: 'normal', color: '#2ef2ff', tag: 'задумано', actRamp: 1, name: 'Шум', desc: 'Задуманный баланс.', hpMul: 1, dmgMul: 0.9, countMul: 1, bulletSpeedMul: 1, aimErr: 1, tokens: 3, cdMul: 1, teleMul: 1, eliteChance: 0.05, playerHp: 100, dropMul: 1, maxHit: 0.25, waveHeal: 0.18 },
+  { id: 2, key: 'hard', color: '#ffa126', tag: 'жёстко', actRamp: 1, name: 'Помехи', desc: 'Плотнее и быстрее: больше врагов атакуют разом, замахи короче, элиты.', hpMul: 1.08, dmgMul: 1.1, countMul: 1.15, bulletSpeedMul: 1.06, aimErr: 0.85, tokens: 3, cdMul: 0.9, teleMul: 0.92, eliteChance: 0.1, playerHp: 100, dropMul: 0.95, maxHit: 0.25, waveHeal: 0.12 },
+  { id: 3, key: 'nightmare', color: '#ff2d7a', tag: 'предел', actRamp: 0.9, name: 'NULL', desc: 'Темп на пределе реакции. Читай телеграфы — каждый удар можно избежать.', hpMul: 1.1, dmgMul: 1.15, countMul: 1.22, bulletSpeedMul: 1.12, aimErr: 0.72, tokens: 4, cdMul: 0.8, teleMul: 0.85, eliteChance: 0.13, playerHp: 100, dropMul: 0.9, maxHit: 0.25, waveHeal: 0.1 },
+  // above NULL: built to train and test bots. Telegraphs stay as fair as on NULL — the extra
+  // pressure comes from numbers, aggression, elites and almost no healing.
+  { id: 4, key: 'overload', color: '#b14bff', tag: 'для ботов', actRamp: 1.1, name: 'ПЕРЕГРУЗ', desc: 'Для ботов и безумцев: больше врагов, чаще атаки, элиты повсюду, почти без лечения. Телеграфы честные, как на NULL.', hpMul: 1.22, dmgMul: 1.27, countMul: 1.37, bulletSpeedMul: 1.17, aimErr: 0.6, tokens: 5, cdMul: 0.74, teleMul: 0.85, eliteChance: 0.21, playerHp: 100, dropMul: 0.78, maxHit: 0.29, waveHeal: 0.07 },
 ];
 
 export function difficulty(id: number): DifficultyDef {
