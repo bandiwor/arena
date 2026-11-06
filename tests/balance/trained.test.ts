@@ -52,7 +52,7 @@ it.skipIf(!process.env['TRAINED'])('trained bot vs tactician', async () => {
     let wins = 0, waves = 0, dmg = 0, mins = 0;
     const deaths: number[] = [];
     for (let k = 0; k < n; k++) {
-      const s = new Scenario(50000 + k * 41, di, 'campaign');
+      const s = new Scenario(Number(process.env["TRAINED_SEED0"] ?? 50000) + k * 41, di, 'campaign');
       s.input(tactician({ weights, reaction: 6 }));
       s.autoPick = 0;
       const w = s.world;

@@ -621,3 +621,10 @@ function pickUpgrade(w: World): number {
   return bestK;
 }
 
+
+/**
+ * «Чемпион»: the Tactician genome after 40 generations of CMA-ES on ПЕРЕГРУЗ with the default
+ * rewards (tests/balance/trained). Held-out full campaigns on ПЕРЕГРУЗ: 26/36 wins vs 9/36 for
+ * the hand-tuned genome (0).
+ */
+export const CHAMPION_GENOME: readonly number[] = [1.539, 0.965, 1.176, 1.305, 0.775, -0.465, -0.786, 1.481, -0.531, -1.125, 1.206, 0.311, -1.759, 1.297, -0.505, -0.657, -0.444, 0.062, 1.33, -0.289, 0.497, 0.142, 0.22, -0.313, -0.251, -0.507, 0.046, 0.341, 0.717, 1.194, -0.198, 0.206, 1.072, -0.238, -0.565];

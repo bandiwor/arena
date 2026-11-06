@@ -96,7 +96,7 @@ export class Scenario {
   }
 }
 
-import { tactician } from './bot/tactician';
+import { CHAMPION_GENOME, decodeGenome, tactician } from './bot/tactician';
 
 /** Common scripted inputs for tests. */
 export const Inputs = {
@@ -352,5 +352,11 @@ export const BOT_SKILLS: readonly BotSkill[] = [
     name: 'Тактик',
     desc: 'Реакция ~100 мс. Карта опасности, бережёт рывок, выбирает цель по угрозе, меняет оружие под ситуацию, подрывает пилоны.',
     make: () => tactician({ reaction: 6 }),
+  },
+  {
+    key: 'champion',
+    name: 'Чемпион',
+    desc: 'Тот же «Тактик», но обученный: 40 поколений эволюции на ПЕРЕГРУЗЕ. На ПЕРЕГРУЗЕ выигрывает примерно втрое чаще.',
+    make: () => tactician({ reaction: 6, weights: decodeGenome(CHAMPION_GENOME) }),
   },
 ];
