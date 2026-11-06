@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { it } from 'vitest';
 import { Inputs, Scenario } from '../../src/sim/scenario';
+import { tactician } from '../../src/sim/bot/tactician';
 import { DIFFICULTIES } from '../../src/sim/content/difficulty';
 import { WavePhase } from '../../src/sim/world';
 
@@ -13,7 +14,7 @@ const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88];
 it.skipIf(!process.env['BALANCE'])('balance report', () => {
   const rows: string[] = [];
   for (const d of DIFFICULTIES) {
-    for (const [bot, mk] of [['fast83', () => Inputs.skilled({ reaction: 5 })], ['skill133', () => Inputs.skilled({ reaction: 8 })], ['slow200', () => Inputs.skilled({ reaction: 12 })], ['naive', () => Inputs.aimbot()]] as const) {
+    for (const [bot, mk] of [['fast83', () => Inputs.skilled({ reaction: 5 })], ['skill133', () => Inputs.skilled({ reaction: 8 })], ['slow200', () => Inputs.skilled({ reaction: 12 })], ['naive', () => Inputs.aimbot()], ['tactic', () => tactician({ reaction: 6 })]] as const) {
       const waves: number[] = [];
       let wins = 0;
       let dead = 0;

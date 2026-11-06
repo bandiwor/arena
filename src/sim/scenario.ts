@@ -96,6 +96,8 @@ export class Scenario {
   }
 }
 
+import { tactician } from './bot/tactician';
+
 /** Common scripted inputs for tests. */
 export const Inputs = {
   /** aim and fire at the nearest enemy, strafe in a circle */
@@ -345,4 +347,10 @@ export const BOT_SKILLS: readonly BotSkill[] = [
   { key: 'casual', name: 'Средний', desc: 'Реакция ~200 мс. Уклоняется и кайтит, но часто опаздывает.', make: () => Inputs.skilled({ reaction: 12 }) },
   { key: 'skilled', name: 'Опытный', desc: 'Реакция ~133 мс. Читает телеграфы, обходит щиты, выбирает апгрейды.', make: () => Inputs.skilled({ reaction: 8 }) },
   { key: 'master', name: 'Мастер', desc: 'Реакция ~83 мс. Рывки сквозь пули в последний момент.', make: () => Inputs.skilled({ reaction: 5 }) },
+  {
+    key: 'tactician',
+    name: 'Тактик',
+    desc: 'Реакция ~100 мс. Карта опасности, бережёт рывок, выбирает цель по угрозе, меняет оружие под ситуацию, подрывает пилоны.',
+    make: () => tactician({ reaction: 6 }),
+  },
 ];

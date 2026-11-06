@@ -8,7 +8,7 @@ import { button, card, kbd, textField } from './kit';
 import { applySettings, loadSettings, saveSettings } from './settings';
 import { DIFF_COLORS, SettingsScreen } from './settings-screen';
 
-const BOT_COLORS = ['#7f86a8', '#5cff9b', '#2ef2ff', '#ffb02e'];
+const BOT_COLORS = ['#7f86a8', '#5cff9b', '#2ef2ff', '#ffb02e', '#c77dff'];
 const LS_REPLAY = 'null-arena:last-replay';
 
 function loadReplay(): ReplayData | null {

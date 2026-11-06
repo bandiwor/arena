@@ -444,7 +444,7 @@ body:not(.coarse) .help .tc { display: none; }
 .help .k-kbd { margin: 0 2px; }
 .pause-col .title { font-size: clamp(44px, 7vw, 72px); margin-bottom: 18px; }
 .over-title { font-size: clamp(44px, 8vw, 72px); }
-.botpick .diffs { grid-template-columns: repeat(4, 1fr); }
+.botpick .diffs { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); width: min(1100px, 94vw); }
 
 /* ═════════════ Settings ═════════════ */
 .screen.settings { z-index: 30; padding: calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px); align-items: stretch; }
