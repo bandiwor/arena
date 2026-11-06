@@ -4,6 +4,7 @@ import { UPGRADES } from '../content/upgrades';
 import { weaponDef } from '../content/weapons';
 import { hasLOS } from '../systems/physics';
 import { PAD_CYCLE, PAD_HOT, PAD_MARK, PAD_RETRACT, padPhase, PYLON, TRACK_ARM, TRACK_LIFE } from '../systems/foundry';
+import { bestPickup, healNeed } from './pickup';
 import type { InputCmd } from '../input';
 import { WavePhase, type World } from '../world';
 
@@ -78,6 +79,7 @@ export interface TacticianWeights {
   biasRail: number;
   biasArc: number;
   biasSing: number;
+  pickupW: number;
 }
 
 export interface GeneSpec {
@@ -127,6 +129,8 @@ export const GENOME: readonly GeneSpec[] = [
   g('biasRail', 'Склонность: рельса', 'Оружие', 1, 0.3, 0.3, 3),
   g('biasArc', 'Склонность: дуговой рельс', 'Оружие', 1, 0.3, 0.3, 3),
   g('biasSing', 'Склонность: сингулярность', 'Оружие', 1, 0.3, 0.3, 3),
+  // appended last so older genomes keep their meaning (missing gene = default)
+  g('pickupW', 'Тяга к аптечкам', 'Позиция', 2.5, 0.5, 0, 15),
 ];
 
 export function defaultWeights(): TacticianWeights {
@@ -465,6 +469,10 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
       const speed = 9.5 * p.stats.speedMul * w.phys.playerSpeed;
       // preferred range for this weapon
       const want = (wd.id === WP.Scatter ? 5 : wd.id === WP.Rail || wd.id === WP.ArcRail ? 13 : wd.id === WP.Launcher ? 10 : 9) * W.rangeMul;
+      // health pickup: pull toward it, harder the more we are hurt
+      const pk = bestPickup(w, speed);
+      const need = pk >= 0 ? healNeed(w) * W.pickupW : 0;
+      const pkD = pk >= 0 ? Math.hypot(w.pickups.x[pk]! - p.x, w.pickups.y[pk]! - p.y) : 0;
       let bk = DIRS;
       let bc = 1e9;
       for (let k = 0; k <= DIRS; k++) {
@@ -498,6 +506,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
           cost -= ((CAND_X[k]! * tx + CAND_Y[k]! * ty) / (d || 1)) * W.orbitW;
           if (!hasLOS(w, ex, ey, E.x[target]!, E.y[target]!)) cost += W.losW;
         }
+        if (need > 0) cost -= (pkD - Math.hypot(w.pickups.x[pk]! - ex, w.pickups.y[pk]! - ey)) * need;
         // stability: keep the current plan unless something is clearly better
         if (k === prevK) cost -= W.stability;
         if (cost < bc) {

@@ -96,6 +96,7 @@ export class Scenario {
   }
 }
 
+import { bestPickup, healNeed } from './bot/pickup';
 import { CHAMPION_GENOME, decodeGenome, tactician } from './bot/tactician';
 
 /** Common scripted inputs for tests. */
@@ -294,6 +295,16 @@ export const Inputs = {
         vy -= Math.sign(p.y) * Math.max(0, Math.abs(p.y) / ARENA_HH - 0.6) * 4;
         const PL = w.pools;
         for (let k = 0; k < PL.count; k++) away(PL.x[k]!, PL.y[k]!, PL.r[k]! + 0.5, 1.5);
+        // walk to a health pickup when hurt
+        const pk = bestPickup(w, 9.5);
+        if (pk >= 0) {
+          const dx = w.pickups.x[pk]! - p.x;
+          const dy = w.pickups.y[pk]! - p.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const k = healNeed(w) * 2.2;
+          vx += (dx / d) * k;
+          vy += (dy / d) * k;
+        }
         hx = vx > 0.35 ? 1 : vx < -0.35 ? -1 : 0;
         hy = vy > 0.35 ? 1 : vy < -0.35 ? -1 : 0;
       }
