@@ -76,7 +76,10 @@ void main(){
   float flash = iFx.x;
   float st = iAnim.z;
   float sq = (abs(st - 3.0) < 0.5) ? charge * 0.14 : 0.0;
-  p.y *= 1.0 - sq + sin(t * 3.0) * 0.015;
+  // leap / hop: stretched along the facing (model forward is +x), thinner and flatter
+  float stretch = abs(st - 11.0) < 0.5 ? 0.13 : 0.0;
+  p.x *= 1.0 + stretch;
+  p.y *= 1.0 - sq + sin(t * 3.0) * 0.015 - stretch * 0.5;
   p.xz *= 1.0 + sq * 0.5 + flash * 0.1;
   // death: glitch slices + swell
   float death = -min(iFx.y, 0.0);

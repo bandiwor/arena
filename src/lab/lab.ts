@@ -122,6 +122,8 @@ function applyAnim(dt: number): void {
     E.affix[enemyId] = anim.elite ? 1 : 0;
     E.aim[enemyId] = 0;
     E.stT[enemyId] = anim.charge * 1.2;
+    if (anim.state === AS.Attached) E.tx[enemyId] = -1; // parasite: latched on the player
+    if (E.type[enemyId] === ET.Parasite) E.fed[enemyId] = anim.state === AS.Attached || anim.state === AS.Retreat ? anim.charge : anim.state === AS.Guard ? 1 - anim.charge : 0;
     if (anim.spin) E.face[enemyId] = E.faceP[enemyId] = E.face[enemyId]! + dt * 0.5;
     E.px[enemyId] = E.x[enemyId]!;
     E.py[enemyId] = E.y[enemyId]!;
@@ -250,7 +252,22 @@ function slider(parent: HTMLElement, label: string, min: number, max: number, st
   parent.appendChild(row);
 }
 
-const STATES: Record<string, number> = { idle: AS.Move, windup: AS.Windup, attack: AS.Attack, dash: AS.Dash, stunned: AS.Stunned, spawn: AS.Spawning };
+// the charge slider scrubs through timed states (stT = charge × 1.2 s)
+const STATES: Record<string, number> = {
+  idle: AS.Move,
+  windup: AS.Windup,
+  attack: AS.Attack,
+  bite: AS.Attack,
+  dash: AS.Dash,
+  leap: AS.Leap,
+  stunned: AS.Stunned,
+  burrow: AS.Burrow,
+  emerge: AS.Emerge,
+  latched: AS.Attached,
+  hop: AS.Retreat,
+  sated: AS.Guard,
+  spawn: AS.Spawning,
+};
 left.innerHTML = '<h1>NULL<span>//</span>LAB</h1><div class="lab-info">процедурные ассеты · тот же рендер, что в игре</div><div class="lab-btns" style="margin-top:8px"><a href="./" style="color:var(--cyan);font:700 12px var(--mono);text-decoration:none">← в игру</a></div>';
 left.appendChild(btns('Модели', MODELS.map((m) => m.key), showModel, (k) => k === current.key));
 left.appendChild(btns('Состояние', Object.keys(STATES), (k) => {

@@ -50,6 +50,13 @@ export const Ev = {
   ArmDown: 48, // x y
   HubShield: 49, // x y on
   Shunt: 50, // lane index
+  // ── Плоть rework
+  Bite: 51, // x y angle type hit
+  Land: 52, // x y type
+  Latch: 53, // x y (parasite grabbed the player)
+  Drain: 54, // x y dmg (one feeding tick)
+  ShakeOff: 55, // x y (dash tore the parasite off)
+  Spray: 56, // x y (bloater hit: pus jets)
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

@@ -87,6 +87,8 @@ export class EnemyStore {
   readonly aux2 = new Float32Array(MAX_ENEMIES);
   /** >0 while a parasite feeds this enemy (decays each tick) */
   readonly buff = new Uint8Array(MAX_ENEMIES);
+  /** parasite fullness 0..1 (fed on blood → swollen; shrinks while sated) */
+  readonly fed = new Float32Array(MAX_ENEMIES);
   /** Призма shield: >0 durability left; <0 = broken, counts up to 0 (seconds until it reforms) */
   readonly shield = new Float32Array(MAX_ENEMIES);
   /** >0: shorted by electricity (machines stunned, others can't attack) */

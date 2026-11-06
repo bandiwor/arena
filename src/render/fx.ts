@@ -60,6 +60,7 @@ const C_ENERGY = new Float32Array(3);
 const C_PICK = new Float32Array(3);
 const C_MUT = new Float32Array(3);
 const C_PUS = new Float32Array([2.6, 1.9, 0.22]); // sulphur — distinct from lime pickups
+const C_PUSMIST = new Float32Array([0.06, 0.045, 0.01]);
 const C_FLESH = new Float32Array([2.6, 0.18, 0.4]);
 const C_GORE = new Float32Array([0.24, 0.005, 0.012]);
 const C_SOIL = new Float32Array([0.06, 0.02, 0.02]);
@@ -176,6 +177,38 @@ export class FxDirector {
   /** HUD hook */
   onEvent: ((type: number, d: Float32Array, o: number) => void) | null = null;
   private time = 0;
+  // Гнойник bursts queued after the swell
+  private readonly popX = new Float32Array(8);
+  private readonly popY = new Float32Array(8);
+  private readonly popT = new Float32Array(8);
+  private queuePop(x: number, y: number, delay: number): void {
+    for (let k = 0; k < 8; k++) {
+      if (this.popT[k]! > 0) continue;
+      this.popX[k] = x;
+      this.popY[k] = y;
+      this.popT[k] = delay;
+      return;
+    }
+  }
+  /** big, glossy, a little gross — never disgusting: glowing sulphur droplets over dark crimson */
+  private bloaterPop(x: number, y: number): void {
+    const J = this.d.juice;
+    this.timed(QK.Flash, QM.Billboard, x, 0.9, y, this.rng.float() * TAU, 5.5, 5.5, C_PUS, 2.2, 0.16);
+    this.timed(QK.Flash, QM.Billboard, x, 0.9, y, 0, 2.6, 2.6, K_WHITE, 1.4, 0.07);
+    this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 7.2, 7.2, C_PUS, 2, 0.45);
+    this.timed(QK.Ring, QM.Ground, x, 0.07, y, 0, 4.2, 4.2, C_FLESH, 1.6, 0.3);
+    this.burst(60, x, 0.9, y, 0, TAU, 3, 13, 9, 1.2, C_GORE, 1, 0.24, 1.4, 24, PS.Blood, 1);
+    this.burst(55, x, 0.9, y, 0, TAU, 4, 15, 10, 1.0, C_PUS, 2.2, 0.16, 1.6, 22, PS.Blood, 0.35);
+    this.burst(16, x, 0.6, y, 0, TAU, 0.6, 3, 1.5, 1.8, C_PUSMIST, 1, 1.5, 1.2, -0.3, PS.Smoke, 0.45);
+    this.d.floor.decals.add(x, y, 3.6, this.rng.float() * TAU, 0.16, 0.012, 0.02, 0.85, 0, this.rng.float() * 100);
+    this.d.floor.decals.add(x, y, 2.2, this.rng.float() * TAU, 0.42, 0.3, 0.02, 0.55, 0, this.rng.float() * 100);
+    this.d.lights.flash(x, y, 1, 8, 8, 6, 0.8, 0.2);
+    this.d.floor.ripple(x, y, 0.8);
+    this.wave(x, y, 0.5);
+    J.addTrauma(0.22 * this.near(x, y));
+    J.stop(0.03);
+    this.sfx('kill_flesh', x, y, 0.9, 0.8, 0.05, 4);
+  }
   // PRESS shunt telegraph (lane about to slam)
   private shuntK = -1;
   private shuntT = 0;
@@ -550,10 +583,9 @@ export class FxDirector {
           this.lastKillY = y;
           this.addCombo();
           if (c === ET.Bloater) {
-            // ruptured sac: glowing pus + acid ring
-            this.burst(30, x, 0.8, y, 0, TAU, 3, 10, 6, 0.9, C_PUS, 1, 0.2, 2, 20, PS.Blood, 0.4);
-            this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 6.4, 6.4, C_ENEMY_B, 2.2, 0.4);
-            this.d.floor.decals.add(x, y, 3, this.rng.float() * TAU, 0.12, 0.3, 0.03, 0.6, 0, this.rng.float() * 100);
+            // the sac swells first (see the ghost) — the burst itself lands a beat later
+            this.queuePop(x, y, 0.14);
+            this.sfx('bloat', x, y, 0.7, 1.35, 0.05, 3);
           }
           if (e >= 3) {
             J.stop(0.06);
@@ -820,18 +852,62 @@ export class FxDirector {
           this.sfx('worm_dig', x, y, 0.7, 1, 0.06, 4);
           break;
         case Ev.WormEmerge: {
-          // eruption: soil, blood and a shock ring — readable, punchy, dodgeable
+          // the bite from below: soil and chips thrown UP, a short crack ring — and blood only if it bit
           const R = a;
-          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, R * 3.2, R * 3.2, C_FLESH, 2.5, 0.4);
-          this.timed(QK.Flash, QM.Billboard, x, 0.8, y, 0, R * 2.4, R * 2.4, C_FLESH, 1.5, 0.12);
-          this.burst(46, x, 0.2, y, 0, TAU, 3, 11, 12, 1.1, C_SOIL, 1, 0.26, 1.5, 26, PS.Shard, 1);
-          this.burst(30, x, 0.4, y, 0, TAU, 2, 8, 10, 1.1, C_GORE, 1, 0.2, 1.5, 26, PS.Blood, 1);
-          this.burst(14, x, 0.3, y, 0, TAU, 1, 4, 2, 1.8, C_DUST, 1, 1.4, 1.3, -0.4, PS.Smoke, 0.7);
-          this.d.floor.decals.add(x, y, R * 1.9, this.rng.float() * TAU, 0.05, 0.004, 0.008, 0.9, 0, this.rng.float() * 100);
-          this.d.floor.ripple(x, y, 1.2);
-          this.wave(x, y, 0.7);
-          J.addTrauma(0.3);
-          this.sfx('worm_burst', x, y, 0.9, 1, 0.05, 4);
+          const hit = b > 0.5;
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, R * 2.4, R * 2.4, C_FLESH, 2, 0.3);
+          this.burst(40, x, 0.3, y, 0, TAU, 1.5, 5, 13, 1.0, C_SOIL, 1, 0.24, 1.2, 28, PS.Shard, 1);
+          this.burst(18, x, 0.3, y, 0, TAU, 0.5, 2, 9, 0.8, C_FLESH, 1.6, 0.08, 1.5, 18, PS.Spark, 0);
+          this.burst(10, x, 0.2, y, 0, TAU, 1, 3, 1.5, 1.5, C_DUST, 1, 1.2, 1.3, -0.4, PS.Smoke, 0.6);
+          if (hit) {
+            this.timed(QK.Flash, QM.Billboard, x, 1.0, y, 0, 2.6, 2.6, C_ENEMY, 2, 0.1);
+            this.burst(26, x, 1.0, y, 0, TAU, 2, 7, 6, 0.9, C_GORE, 1, 0.18, 1.5, 24, PS.Blood, 1);
+            J.addTrauma(0.35);
+          } else J.addTrauma(0.15 * this.near(x, y));
+          this.d.floor.decals.add(x, y, R * 1.5, this.rng.float() * TAU, 0.05, 0.004, 0.008, 0.9, 0, this.rng.float() * 100);
+          this.d.floor.ripple(x, y, 0.9);
+          this.sfx('worm_burst', x, y, 0.9, hit ? 1 : 1.15, 0.05, 4);
+          break;
+        }
+        case Ev.Bite: {
+          // jaws snapping shut: a quick magenta crack; blood if it connected
+          const hit = d > 0.5;
+          this.timed(QK.Flash, QM.Billboard, x, 0.6, y, a, hit ? 1.8 : 1.1, hit ? 1.8 : 1.1, C_ENEMY, hit ? 2 : 1.2, 0.07);
+          if (hit) this.burst(12, x, 0.7, y, a, 1.2, 2, 7, 3, 0.5, C_GORE, 1, 0.12, 2, 18, PS.Blood, 1);
+          this.sfx(hit ? 'hit_flesh' : 'dart_dive', x, y, hit ? 0.6 : 0.25, hit ? 1.5 : 2.2, 0.05, 4);
+          break;
+        }
+        case Ev.Land:
+          this.timed(QK.Ring, QM.Ground, x, 0.05, y, 0, 1.8, 1.8, C_DUST, 1, 0.25);
+          this.burst(6, x, 0.1, y, 0, TAU, 1, 3, 1, 0.5, C_DUST, 1, 0.5, 1.5, -0.2, PS.Smoke, 0.4);
+          break;
+        case Ev.Latch:
+          // a parasite bit in: the screen edge pulses, a crimson ring on the player
+          this.timed(QK.Ring, QM.Billboard, x, 0.9, y, 0, 2.4, 2.4, C_FLESH, 2.2, 0.25);
+          this.burst(10, x, 0.9, y, 0, TAU, 2, 5, 2, 0.4, C_GORE, 1, 0.12, 2, 16, PS.Blood, 1);
+          J.addChroma(0.35);
+          J.damage = Math.max(J.damage, 0.3);
+          this.sfx('hit_flesh', x, y, 0.8, 1.6, 0.05);
+          break;
+        case Ev.Drain:
+          // one sip: a droplet drawn out of the player, a faint red pulse at the screen edge
+          this.burst(3, x, 0.95, y, 0, TAU, 0.5, 2, 2.5, 0.45, C_FLESH, 1.4, 0.07, 1.5, 6, PS.Blood, 0.4);
+          J.damage = Math.max(J.damage, 0.22);
+          this.sfx('hit_flesh', x, y, 0.22, 1.9, 0.08, 2);
+          break;
+        case Ev.ShakeOff:
+          this.timed(QK.Ring, QM.Billboard, x, 0.8, y, 0, 2.2, 2.2, C_PLAYER, 2, 0.2);
+          this.burst(10, x, 0.8, y, 0, TAU, 3, 8, 3, 0.4, C_PLAYER, 2, 0.08, 3, 6, PS.Spark, 0);
+          this.sfx('shield_block', x, y, 0.5, 1.3, 0.05);
+          break;
+        case Ev.Spray: {
+          // a hit Гнойник squirts pus jets around itself
+          const n = b | 0;
+          for (let k = 0; k < n; k++) {
+            const ang = a + (k / Math.max(1, n)) * TAU;
+            this.burst(7, x, 0.8, y, ang, 0.35, 3, 8, 3, 0.5, C_PUS, 2, 0.1, 2, 16, PS.Blood, 0.35);
+          }
+          this.sfx('hit_flesh', x, y, 0.4, 0.8, 0.06, 3);
           break;
         }
         case Ev.Birth:
@@ -1025,6 +1101,11 @@ export class FxDirector {
       if (this.pdT[i]! <= 0) continue;
       this.pdT[i] = this.pdT[i]! - dt;
       if (this.pdT[i]! <= 0) this.decal(this.pdM[i]!, this.pdX[i]!, this.pdY[i]!, this.pdS[i]!);
+    }
+    for (let k = 0; k < 8; k++) {
+      if (this.popT[k]! <= 0) continue;
+      this.popT[k] = this.popT[k]! - dt;
+      if (this.popT[k]! <= 0) this.bloaterPop(this.popX[k]!, this.popY[k]!);
     }
     // timed quads
     for (let i = 0; i < TFX; i++) {

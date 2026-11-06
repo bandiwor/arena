@@ -32,7 +32,7 @@ export const ENEMIES: EnemyDef[] = [
 ];
 ENEMIES.push(
   { type: ET.Worm, key: 'worm', name: 'Червь', hp: 34, r: 0.6, speed: 3, accel: 20, mass: 1.4, material: Mat.Flesh, contactDmg: 10, score: 30, spawnTime: 0.9, drop: 0.08, height: 1.0 },
-  { type: ET.Parasite, key: 'parasite', name: 'Паразит', hp: 16, r: 0.36, speed: 7.5, accel: 40, mass: 0.4, material: Mat.Flesh, contactDmg: 7, score: 20, spawnTime: 0.7, drop: 0.04, height: 0.55 },
+  { type: ET.Parasite, key: 'parasite', name: 'Паразит', hp: 16, r: 0.36, speed: 7.5, accel: 40, mass: 0.4, material: Mat.Flesh, contactDmg: 0, score: 20, spawnTime: 0.7, drop: 0.04, height: 0.55 },
   { type: ET.Brood, key: 'brood', name: 'МАТКА', hp: 2700, r: 2.3, speed: 0, accel: 4, mass: 80, material: Mat.Flesh, contactDmg: 25, score: 800, spawnTime: 2.2, drop: 0, height: 3.4 },
   // ─────────────── Акт III · ЛИТЕЙНЫЙ ЦЕХ (all machines)
   { type: ET.GearMite, key: 'mite', name: 'Шестерёнка-клещ', hp: 14, r: 0.4, speed: 7.5, accel: 40, mass: 0.5, material: Mat.Machine, contactDmg: 12, score: 8, spawnTime: 0.6, drop: 0.03, height: 0.6 },

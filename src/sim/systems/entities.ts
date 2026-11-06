@@ -14,6 +14,10 @@ export function vulnMul(t: number, st: number): number {
   if (t === ET.ArcDrone && st === AS.Windup) return 1.4;
   if (t === ET.Hauler && st === AS.Recover) return 1.3;
   if (t === ET.Skiff && st === AS.Stunned) return 1.2;
+  // Плоть: skill windows — a worm that missed its bite is stuck, a parasite knocked off is dazed
+  if (t === ET.Worm && st === AS.Stunned) return 1.5;
+  if (t === ET.Worm && st === AS.Emerge) return 1.3;
+  if (t === ET.Parasite && st === AS.Stunned) return 1.5;
   return 1;
 }
 export const SHIELD_DOWN = 4;
@@ -96,6 +100,7 @@ export function spawnEnemy(w: World, type: EnemyType, x: number, y: number, opts
   E.shortT[i] = 0;
   E.haste[i] = 0;
   E.buff[i] = 0;
+  E.fed[i] = 0;
   E.shield[i] = type === ET.Shielder ? SHIELD_HP * w.diff.hpMul : 0;
   return i;
 }
@@ -235,6 +240,18 @@ export function damageEnemy(
   if (t === ET.Boss && w.boss.dying > 0) return false;
   E.hp[i] = E.hp[i]! - dmg;
   E.flash[i] = 1;
+  // Гнойник: every hit squirts 2–3 pus globs, spread around the full circle (rate-limited)
+  if (t === ET.Bloater && E.hp[i]! > 0 && E.aux[i]! <= 0 && E.st[i] !== AS.Windup) {
+    E.aux[i] = 0.3;
+    const n = 2 + w.rng.int(2);
+    const base = w.rng.range(0, 6.283185307179586);
+    for (let k = 0; k < n; k++) {
+      const a = base + (k / n) * 6.283185307179586 + w.rng.sym() * 0.5;
+      const b = spawnBullet(w, Team.Enemy, BK.Acid, E.x[i]! + dcos(a) * E.r[i]!, E.y[i]! + dsin(a) * E.r[i]!, a, 5.5 * w.diff.bulletSpeedMul, 6, 0.26, 1.6, 0, 0, 0, 0, 0, 0);
+      if (b >= 0) w.bullets.h0[b] = 0.9;
+    }
+    w.events.push(Ev.Spray, E.x[i]!, E.y[i]!, base, n);
+  }
   E.dmgTaken[i] = E.dmgTaken[i]! + dmg;
   w.stats.dmgDealt += dmg;
   const km = knock / def.mass;
@@ -310,6 +327,10 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
   if (w.boss.id === i) w.boss.id = -1;
   if (w.miniBoss === i) w.miniBoss = -1;
   removeEnemy(w, i);
+  // the arms are part of the ASSEMBLER: they collapse with the hub (never leave a wave hanging)
+  if (t === ET.Assembler) {
+    for (let k = 0; k < E.hi; k++) if (E.alive[k] && E.type[k] === ET.Arm) killEnemy(w, k, angle, rarity, _weapon, 0);
+  }
 }
 
 /** damage source ids for stats: enemy type for melee/explosions, 20 + bullet kind for shots, 40 laser, 41 slam */
@@ -327,6 +348,26 @@ export function hurtPlayer(w: World, dmg: number, fromX: number, fromY: number, 
   p.vx += dcos(a) * 9;
   p.vy += dsin(a) * 9;
   w.events.push(Ev.PlayerHurt, p.x, p.y, dmg, p.hp, a);
+  if (p.hp <= 0) {
+    p.hp = 0;
+    p.alive = false;
+    w.events.push(Ev.PlayerDeath, p.x, p.y);
+  }
+}
+
+/**
+ * Feeding damage (parasite latched on the player): small ticks that ignore i-frames and cause no
+ * knockback or hurt flash — the player feels a steady drain, not a hit. Scaled like any damage.
+ */
+export function drainPlayer(w: World, dmg: number, src: number): void {
+  const p = w.player;
+  if (!p.alive || w.god) return;
+  dmg = dmg * w.diff.dmgMul * actRamp(w, ACT_DMG[w.act] ?? 1);
+  p.hp -= dmg;
+  w.stats.dmgTaken += dmg;
+  if (src >= 0 && src < w.stats.dmgBy.length) w.stats.dmgBy[src] = w.stats.dmgBy[src]! + dmg;
+  w.director.dmgRecent += dmg;
+  w.events.push(Ev.Drain, p.x, p.y, dmg);
   if (p.hp <= 0) {
     p.hp = 0;
     p.alive = false;

@@ -2,7 +2,7 @@ import { Ev } from '../core/events';
 import { dcos, dsin, datan2, segDist2 } from '../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, BK, DT, ET, Team } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
-import { acquireToken, hurtPlayer, killEnemy, releaseToken, SHIELD_HP, spawnBullet, spawnEnemy } from '../sim/systems/entities';
+import { acquireToken, drainPlayer, hurtPlayer, killEnemy, releaseToken, SHIELD_HP, spawnBullet, spawnEnemy } from '../sim/systems/entities';
 import { hasLOS } from '../sim/systems/physics';
 import { arcFrom } from '../sim/systems/foundry';
 import type { World } from '../sim/world';
@@ -221,14 +221,34 @@ function contact(w: World, i: number): void {
   const dy = p.y - E.y[i]!;
   const rr = E.r[i]! + p.r * 0.8;
   if (dx * dx + dy * dy < rr * rr) {
-    let dmg = enemyDef(E.type[i]!).contactDmg;
+    const t = E.type[i]!;
+    // explicit attackers: a swarmer hurts by landing a pounce (bites are checked separately),
+    // a worm only by its bites — walking into them is not a hit
+    if (t === ET.Swarmer && E.st[i] !== AS.Leap) return;
+    if (t === ET.Worm) return;
+    let dmg = enemyDef(t).contactDmg;
     if (dmg <= 0) return;
     if (E.st[i] === AS.Dash || E.st[i] === AS.Leap) dmg *= 1.3;
     hurtPlayer(w, dmg, E.x[i]!, E.y[i]!, E.type[i]!);
   }
 }
 
-// ───────────────────────────── Swarmer: pack hunter, surrounds then leaps
+// ───────────────────────────── Swarmer: pack hunter — surrounds, POUNCES from mid range, BITES up close
+export const SWARM = { pounceWind: 0.32, leap: 0.24, leapSpeed: 17, biteWind: 0.2, biteSnap: 0.12, biteReach: 1.0 } as const;
+/** shared bite check: cone in front of the attacker; returns true if the player was hit */
+function biteCheck(w: World, i: number, reach: number, dmg: number, cone = 0.35): boolean {
+  const E = w.enemies;
+  const p = w.player;
+  if (!p.alive || p.dashT > 0) return false;
+  const dx = p.x - E.x[i]!;
+  const dy = p.y - E.y[i]!;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d > E.r[i]! + p.r + reach) return false;
+  const f = E.face[i]!;
+  if (d > 0.3 && (dx * dcos(f) + dy * dsin(f)) / d < cone) return false;
+  hurtPlayer(w, dmg, E.x[i]!, E.y[i]!, E.type[i]!);
+  return true;
+}
 function swarmer(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
@@ -237,10 +257,11 @@ function swarmer(w: World, i: number): void {
   const sp = speedOf(w, i);
   switch (E.st[i]) {
     case AS.Windup: {
+      // pounce coil: crouch, track the target (never shortened — already at reaction limit)
       faceToward(w, i, toP, 14);
-      E.charge[i] = E.stT[i]! / 0.3; // leap wind-up is never shortened (already at reaction limit)
-      integrate(w, i, 0, 0);
-      if (E.stT[i]! >= 0.3) {
+      E.charge[i] = Math.min(1, E.stT[i]! / SWARM.pounceWind);
+      integrate(w, i, -dcos(toP) * 0.6, -dsin(toP) * 0.6);
+      if (E.stT[i]! >= SWARM.pounceWind) {
         E.aim[i] = E.face[i]!;
         setState(w, i, AS.Leap);
       }
@@ -249,10 +270,37 @@ function swarmer(w: World, i: number): void {
     case AS.Leap: {
       E.charge[i] = 0;
       const a = E.aim[i]!;
-      E.vx[i] = dcos(a) * 17;
-      E.vy[i] = dsin(a) * 17;
+      E.vx[i] = dcos(a) * SWARM.leapSpeed;
+      E.vy[i] = dsin(a) * SWARM.leapSpeed;
       integrate(w, i, E.vx[i]!, E.vy[i]!);
-      if (E.stT[i]! >= 0.22) setState(w, i, AS.Recover);
+      if (E.stT[i]! >= SWARM.leap) {
+        w.events.push(Ev.Land, E.x[i]!, E.y[i]!, ET.Swarmer);
+        E.vx[i] = E.vx[i]! * 0.3;
+        E.vy[i] = E.vy[i]! * 0.3;
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Attack: {
+      // bite: rear back (mandibles open) → snap forward (they close) → a short cone check
+      const t = E.stT[i]!;
+      const W = SWARM.biteWind;
+      if (t < W) {
+        faceToward(w, i, toP, 12);
+        E.charge[i] = t / W;
+        integrate(w, i, -dcos(E.face[i]!) * 0.6, -dsin(E.face[i]!) * 0.6);
+      } else {
+        E.charge[i] = 0;
+        const a = E.face[i]!;
+        integrate(w, i, dcos(a) * 7, dsin(a) * 7);
+        // the jaws close mid-lunge
+        if (E.aux[i] === 0 && t >= W + 0.05) {
+          E.aux[i] = 1;
+          const hit = biteCheck(w, i, SWARM.biteReach, 8);
+          w.events.push(Ev.Bite, E.x[i]! + dcos(a) * 0.5, E.y[i]! + dsin(a) * 0.5, a, ET.Swarmer, hit ? 1 : 0);
+        }
+        if (t >= W + SWARM.biteSnap) setState(w, i, AS.Recover);
+      }
       return;
     }
     case AS.Recover: {
@@ -276,11 +324,27 @@ function swarmer(w: World, i: number): void {
       const dv = pathTo(w, i, tx, ty, true);
       // slight sinus weave makes the swarm read as organic
       const weave = dsin(w.time * 7 + E.seed[i]! * 20) * 0.35;
-      const vx = (dv[0]! - dv[1]! * weave) * sp;
-      const vy = (dv[1]! + dv[0]! * weave) * sp;
+      let vx = (dv[0]! - dv[1]! * weave) * sp;
+      let vy = (dv[1]! + dv[0]! * weave) * sp;
+      // on cooldown and already at bite range: circle and snap at the air, never pile into the player
+      const hold = E.r[i]! + p.r + 0.9;
+      if (E.cd[i]! > 0 && d < hold + 0.6) {
+        const rx = (p.x - E.x[i]!) / (d || 1);
+        const ry = (p.y - E.y[i]!) / (d || 1);
+        const radial = (d - hold) * 2.5;
+        const s2 = E.aux2[i]! * sp * 0.55;
+        vx = rx * radial - ry * s2;
+        vy = ry * radial + rx * s2;
+      }
       faceToward(w, i, datan2(vy, vx), 10);
       integrate(w, i, vx, vy);
-      if (d < 4 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y)) setState(w, i, AS.Windup);
+      if (E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y)) {
+        const reachBite = E.r[i]! + p.r + SWARM.biteReach + 0.3;
+        if (d < reachBite) {
+          E.aux[i] = 0;
+          setState(w, i, AS.Attack);
+        } else if (d > 2.6 && d < 5.5) setState(w, i, AS.Windup);
+      }
     }
   }
 }
@@ -669,6 +733,7 @@ function bloater(w: World, i: number): void {
   const p = w.player;
   const d = distToPlayer(w, i);
   const sp = speedOf(w, i);
+  E.aux[i] = Math.max(0, E.aux[i]! - DT); // pus-spray cooldown (see damageEnemy)
   if (E.st[i] === AS.Windup) {
     E.charge[i] = Math.min(1, E.stT[i]! / tel(w, BLOAT_FUSE_BASE));
     integrate(w, i, 0, 0);
@@ -749,19 +814,30 @@ function dart(w: World, i: number): void {
   }
 }
 
-// ───────────────────────────── Worm: burrows, swims under the floor toward where you WILL be, erupts
-export const WORM = { burrow: 0.45, maxUnder: 3.6, speedUnder: 13, warn: 0.6, emerge: 0.25, exposed: 1.15, radius: 1.9 } as const;
+// ───────────────────────────── Worm: crawls → DIVES beak-first from mid range → swims under the floor
+// toward where you WILL be → the mound tracks you, then locks → BURSTS UP and bites.
+// Skill: move after the lock and the bite misses — a worm that misses is stuck (+50% damage).
+export const WORM = {
+  diveMin: 5, diveMax: 12, burrow: 0.45, maxUnder: 3.6, speedUnder: 13,
+  warn: 0.65, track: 0.5, trackSpeed: 3.2, emerge: 0.35, radius: 1.7, stuck: 1.1,
+  biteWind: 0.35, biteSnap: 0.16,
+} as const;
 function worm(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
+  const d = distToPlayer(w, i);
   switch (E.st[i]) {
-    case AS.Burrow:
-      integrate(w, i, 0, 0);
+    case AS.Burrow: {
+      // dive: a forward lunge, nose down, sinking into the floor
+      const k = Math.max(0, 1 - E.stT[i]! / WORM.burrow);
+      const a = E.face[i]!;
+      integrate(w, i, dcos(a) * 8 * k, dsin(a) * 8 * k);
       if (E.stT[i]! >= WORM.burrow) {
         wormRetarget(w, i);
         setState(w, i, AS.Underground);
       }
       return;
+    }
     case AS.Underground: {
       if (E.think[i]! <= 0) {
         E.think[i] = 0.25;
@@ -769,63 +845,112 @@ function worm(w: World, i: number): void {
       }
       const dx = E.tx[i]! - E.x[i]!;
       const dy = E.ty[i]! - E.y[i]!;
-      const d = Math.sqrt(dx * dx + dy * dy);
+      const dd = Math.sqrt(dx * dx + dy * dy);
       const sp = WORM.speedUnder * w.phys.enemySpeed;
-      if (d > 0.01) {
-        const step = Math.min(d, sp * DT);
-        E.vx[i] = (dx / d) * sp;
-        E.vy[i] = (dy / d) * sp;
+      if (dd > 0.01) {
+        const step = Math.min(dd, sp * DT);
+        E.vx[i] = (dx / dd) * sp;
+        E.vy[i] = (dy / dd) * sp;
         // under the floor: pillars don't block, only the arena walls do
-        E.x[i] = Math.max(-ARENA_HW + 1, Math.min(ARENA_HW - 1, E.x[i]! + (dx / d) * step));
-        E.y[i] = Math.max(-ARENA_HH + 1, Math.min(ARENA_HH - 1, E.y[i]! + (dy / d) * step));
+        E.x[i] = Math.max(-ARENA_HW + 1, Math.min(ARENA_HW - 1, E.x[i]! + (dx / dd) * step));
+        E.y[i] = Math.max(-ARENA_HH + 1, Math.min(ARENA_HH - 1, E.y[i]! + (dy / dd) * step));
         E.face[i] = datan2(dy, dx);
         E.walk[i] = E.walk[i]! + step * 2;
       }
-      if (d < 1.2 || E.stT[i]! > WORM.maxUnder) {
+      if (dd < 1.2 || E.stT[i]! > WORM.maxUnder) {
         E.vx[i] = 0;
         E.vy[i] = 0;
         setState(w, i, AS.Windup);
       }
       return;
     }
-    case AS.Windup:
-      // telegraph: the floor bulges where it will erupt
-      E.charge[i] = Math.min(1, E.stT[i]! / tel(w, WORM.warn));
-      if (E.stT[i]! >= tel(w, WORM.warn)) {
-        E.charge[i] = 0;
-        setState(w, i, AS.Emerge);
-        E.face[i] = angleToPlayer(w, i);
-        w.events.push(Ev.WormEmerge, E.x[i]!, E.y[i]!, WORM.radius);
+    case AS.Windup: {
+      // telegraph: the floor bulges. For the first half the mound creeps after you, then it locks.
+      const W = tel(w, WORM.warn);
+      E.charge[i] = Math.min(1, E.stT[i]! / W);
+      if (E.stT[i]! < W * WORM.track && p.alive) {
         const dx = p.x - E.x[i]!;
         const dy = p.y - E.y[i]!;
-        if (p.alive && dx * dx + dy * dy < WORM.radius * WORM.radius) hurtPlayer(w, 16, E.x[i]!, E.y[i]!, ET.Worm);
+        const dd = Math.sqrt(dx * dx + dy * dy) || 1;
+        const step = Math.min(dd, WORM.trackSpeed * DT);
+        E.x[i] = E.x[i]! + (dx / dd) * step;
+        E.y[i] = E.y[i]! + (dy / dd) * step;
+      }
+      if (E.stT[i]! >= W) {
+        E.charge[i] = 0;
+        E.face[i] = angleToPlayer(w, i);
+        // the bite: straight up out of the floor
+        const dx = p.x - E.x[i]!;
+        const dy = p.y - E.y[i]!;
+        const inRange = p.alive && dx * dx + dy * dy < WORM.radius * WORM.radius;
+        const hit = inRange && p.dashT <= 0;
+        if (hit) hurtPlayer(w, 16, E.x[i]!, E.y[i]!, ET.Worm);
+        E.aux[i] = hit ? 1 : 0; // remember: hit or miss
+        w.events.push(Ev.WormEmerge, E.x[i]!, E.y[i]!, WORM.radius, hit ? 1 : 0);
+        setState(w, i, AS.Emerge);
       }
       return;
+    }
     case AS.Emerge:
       faceToward(w, i, angleToPlayer(w, i), 6);
+      integrate(w, i, 0, 0);
       if (E.stT[i]! >= WORM.emerge) {
-        E.cd[i] = WORM.exposed * cdMul(w);
-        setState(w, i, AS.Recover);
+        if (E.aux[i] === 1) {
+          E.cd[i] = 1.4 * cdMul(w);
+          setState(w, i, AS.Recover);
+        } else setState(w, i, AS.Stunned); // missed: stuck half out of the floor
       }
       return;
-    case AS.Recover: {
-      // exposed and vulnerable — crawl, snap at the player
+    case AS.Stunned:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= WORM.stuck) {
+        E.cd[i] = 0.8 * cdMul(w);
+        setState(w, i, AS.Move);
+      }
+      return;
+    case AS.Attack: {
+      // surface bite when you get close: rear up, then snap forward
+      const t = E.stT[i]!;
+      const W = tel(w, WORM.biteWind);
+      if (t < W) {
+        faceToward(w, i, angleToPlayer(w, i), 6);
+        E.charge[i] = t / W;
+        integrate(w, i, 0, 0);
+      } else {
+        E.charge[i] = 0;
+        const a = E.face[i]!;
+        integrate(w, i, dcos(a) * 9, dsin(a) * 9);
+        if (E.aux[i] === 0) {
+          E.aux[i] = 1;
+          const hit = biteCheck(w, i, 1.1, 12);
+          w.events.push(Ev.Bite, E.x[i]! + dcos(a) * 0.7, E.y[i]! + dsin(a) * 0.7, a, ET.Worm, hit ? 1 : 0);
+        }
+        if (t >= W + WORM.biteSnap) {
+          E.cd[i] = 1.2 * cdMul(w);
+          setState(w, i, AS.Recover);
+        }
+      }
+      return;
+    }
+    case AS.Recover:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 0.5) setState(w, i, AS.Move);
+      return;
+    default: {
+      // on the surface: crawl closer; dive from mid range, bite up close
       const sp = speedOf(w, i);
       const dv = pathTo(w, i, p.x, p.y, true);
       faceToward(w, i, datan2(dv[1]!, dv[0]!), 5);
       integrate(w, i, dv[0]! * sp, dv[1]! * sp);
-      if (E.stT[i]! >= E.cd[i]!) {
-        setState(w, i, AS.Burrow);
-        w.events.push(Ev.WormBurrow, E.x[i]!, E.y[i]!);
-      }
-      return;
-    }
-    default: {
-      // freshly spawned: crawl a moment, then dive
-      integrate(w, i, 0, 0);
-      if (E.stT[i]! > 0.6) {
-        setState(w, i, AS.Burrow);
-        w.events.push(Ev.WormBurrow, E.x[i]!, E.y[i]!);
+      if (E.cd[i]! <= 0 && E.stT[i]! > 0.4 && p.alive) {
+        if (d >= WORM.diveMin && d <= WORM.diveMax) {
+          faceToward(w, i, angleToPlayer(w, i), 50);
+          w.events.push(Ev.WormBurrow, E.x[i]! + dcos(E.face[i]!) * 0.8, E.y[i]! + dsin(E.face[i]!) * 0.8);
+          setState(w, i, AS.Burrow);
+        } else if (d < E.r[i]! + p.r + 1.6) {
+          E.aux[i] = 0;
+          setState(w, i, AS.Attack);
+        }
       }
     }
   }
@@ -844,7 +969,15 @@ function wormRetarget(w: World, i: number): void {
   E.ty[i] = Math.max(-ARENA_HH + 1.5, Math.min(ARENA_HH - 1.5, p.y + p.vy * eta * 0.8 + w.rng.sym() * err * 1.2));
 }
 
-// ───────────────────────────── Parasite: latches onto another creature and feeds it (harder, faster)
+// ───────────────────────────── Parasite: a hungry blood-tick. State machine:
+//   Move (hungry: picks a host — a sturdy creature or the player)
+//   → Windup (crouch) → Leap ─┬─ touches the player → Attached(player) drains N×1 over ~1 s
+//                             └─ misses → Recover → Move
+//   Attached(player) ─┬─ fed → Retreat (hops away, swollen) → Guard (sated: keeps away, shrinks) → Move
+//                     └─ player dashes → Stunned (shaken off, +50% damage) → Move
+//   Attached(creature): rides and feeds it (−40% damage taken, +30% speed) until the host dies.
+// E.tx = host index (-1 = the player), E.ty = host generation, E.aux = timer, E.burst = ticks drained.
+export const PARA = { leapWind: 0.32, leap: 0.3, leapSpeed: 15, drainTicks: 6, drainTime: 1.0, hop: 0.35, sated: 4, shaken: 0.9 } as const;
 function hostValid(w: World, h: number, gen: number): boolean {
   const E = w.enemies;
   return h >= 0 && !!E.alive[h] && E.gen[h] === gen && E.type[h] !== ET.Parasite && E.st[h] !== AS.Underground && E.st[h] !== AS.Spawning;
@@ -852,32 +985,130 @@ function hostValid(w: World, h: number, gen: number): boolean {
 function parasite(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
-  if (E.st[i] === AS.Attached) {
-    const h = E.tx[i]! | 0;
-    if (!hostValid(w, h, E.ty[i]! | 0)) {
-      setState(w, i, AS.Move);
-      E.kx[i] = w.rng.sym() * 6;
-      E.ky[i] = w.rng.sym() * 6;
+  const d = distToPlayer(w, i);
+  switch (E.st[i]) {
+    case AS.Attached: {
+      const h = E.tx[i]! | 0;
+      if (h === -1) {
+        // ── on the player
+        if (!p.alive) return setState(w, i, AS.Move);
+        if (p.dashT > 0) {
+          // shaken off by a dash: flung away and dazed
+          const a = datan2(E.y[i]! - p.y, E.x[i]! - p.x);
+          E.kx[i] = dcos(a) * 10;
+          E.ky[i] = dsin(a) * 10;
+          w.events.push(Ev.ShakeOff, E.x[i]!, E.y[i]!);
+          return setState(w, i, AS.Stunned);
+        }
+        const f = p.face + Math.PI;
+        E.x[i] = p.x + dcos(f) * 0.35;
+        E.y[i] = p.y + dsin(f) * 0.35;
+        E.face[i] = p.face;
+        E.vx[i] = p.vx;
+        E.vy[i] = p.vy;
+        const n = PARA.drainTicks;
+        const due = Math.min(n, Math.floor((E.stT[i]! / PARA.drainTime) * n + 1e-6));
+        while (E.burst[i]! < due) {
+          E.burst[i] = E.burst[i]! + 1;
+          drainPlayer(w, 1, ET.Parasite);
+          E.fed[i] = E.burst[i]! / n;
+        }
+        if (E.burst[i]! >= n) {
+          // full: let go and hop away
+          E.fed[i] = 1;
+          const a = datan2(E.y[i]! - p.y, E.x[i]! - p.x) + w.rng.sym() * 0.6;
+          E.aim[i] = a;
+          setState(w, i, AS.Retreat);
+        }
+        return;
+      }
+      // ── on a creature
+      if (!hostValid(w, h, E.ty[i]! | 0) || h === i) {
+        setState(w, i, AS.Move);
+        E.kx[i] = w.rng.sym() * 6;
+        E.ky[i] = w.rng.sym() * 6;
+        return;
+      }
+      E.buff[h] = 3;
+      const f = E.face[h]!;
+      E.x[i] = E.x[h]! - dcos(f) * E.r[h]! * 0.35;
+      E.y[i] = E.y[h]! - dsin(f) * E.r[h]! * 0.35;
+      E.face[i] = f;
+      E.vx[i] = E.vx[h]!;
+      E.vy[i] = E.vy[h]!;
       return;
     }
-    if (h === i) {
-      setState(w, i, AS.Move);
+    case AS.Windup: {
+      faceToward(w, i, angleToPlayer(w, i), 14);
+      E.charge[i] = Math.min(1, E.stT[i]! / tel(w, PARA.leapWind));
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= tel(w, PARA.leapWind)) {
+        E.aim[i] = E.face[i]!;
+        setState(w, i, AS.Leap);
+      }
       return;
     }
-    E.buff[h] = 3;
-    const f = E.face[h]!;
-    E.x[i] = E.x[h]! - dcos(f) * E.r[h]! * 0.35;
-    E.y[i] = E.y[h]! - dsin(f) * E.r[h]! * 0.35;
-    E.face[i] = f;
-    E.vx[i] = E.vx[h]!;
-    E.vy[i] = E.vy[h]!;
-    return;
+    case AS.Leap: {
+      E.charge[i] = 0;
+      const a = E.aim[i]!;
+      E.vx[i] = dcos(a) * PARA.leapSpeed;
+      E.vy[i] = dsin(a) * PARA.leapSpeed;
+      integrate(w, i, E.vx[i]!, E.vy[i]!);
+      if (p.alive && p.dashT <= 0 && !w.god && d < E.r[i]! + p.r + 0.25) {
+        // latched
+        E.tx[i] = -1;
+        E.ty[i] = 0;
+        E.burst[i] = 0;
+        w.events.push(Ev.Latch, p.x, p.y);
+        return setState(w, i, AS.Attached);
+      }
+      if (E.stT[i]! >= PARA.leap) {
+        E.cd[i] = 0.9 * cdMul(w);
+        setState(w, i, AS.Recover);
+      }
+      return;
+    }
+    case AS.Retreat: {
+      // fed: one swollen hop away from the player
+      const a = E.aim[i]!;
+      const k = 1 - E.stT[i]! / PARA.hop;
+      integrate(w, i, dcos(a) * 11 * Math.max(0, k), dsin(a) * 11 * Math.max(0, k));
+      if (E.stT[i]! >= PARA.hop) {
+        w.events.push(Ev.Land, E.x[i]!, E.y[i]!, ET.Parasite);
+        setState(w, i, AS.Guard);
+      }
+      return;
+    }
+    case AS.Guard: {
+      // sated: keeps its distance, digests (shrinks back), never attacks
+      const S = PARA.sated * cdMul(w);
+      E.fed[i] = Math.max(0, 1 - E.stT[i]! / S);
+      const sp = speedOf(w, i) * 0.45;
+      const away = d < 8 ? -1 : d > 11 ? 0.4 : 0;
+      const rx = (p.x - E.x[i]!) / (d || 1);
+      const ry = (p.y - E.y[i]!) / (d || 1);
+      const s = E.aux2[i]! * 0.6;
+      integrate(w, i, (rx * away - ry * s) * sp, (ry * away + rx * s) * sp);
+      faceToward(w, i, datan2(E.vy[i]!, E.vx[i]!), 6);
+      if (E.stT[i]! >= S) {
+        E.fed[i] = 0;
+        setState(w, i, AS.Move); // hungry again
+      }
+      return;
+    }
+    case AS.Stunned:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= PARA.shaken) {
+        E.cd[i] = 1.2 * cdMul(w);
+        setState(w, i, AS.Move);
+      }
+      return;
+    case AS.Recover:
+      integrate(w, i, 0, 0);
+      if (E.stT[i]! >= 0.35) setState(w, i, AS.Move);
+      return;
   }
-  if (E.st[i] === AS.Windup || E.st[i] === AS.Leap || E.st[i] === AS.Recover) {
-    swarmer(w, i); // no host: behaves like a leaping tick
-    return;
-  }
-  // seek the nearest unclaimed host
+  // ── Move: hungry — choose the best host: a sturdy creature, or the player
   if (E.think[i]! <= 0) {
     E.think[i] = 0.3;
     let best = -1;
@@ -899,33 +1130,39 @@ function parasite(w: World, i: number): void {
         best = j;
       }
     }
+    // the player is fresh blood: valued like a mid-weight host
+    if (p.alive && d / 3 < bd) best = -1;
     E.aux[i] = best;
   }
   const h = E.aux[i]! | 0;
+  const sp = speedOf(w, i);
   if (h >= 0 && h !== i && E.alive[h] && E.buff[h] === 0 && E.type[h] !== ET.Parasite && E.st[h] !== AS.Spawning && E.st[h] !== AS.Underground) {
     const dx = E.x[h]! - E.x[i]!;
     const dy = E.y[h]! - E.y[i]!;
-    const d = Math.sqrt(dx * dx + dy * dy);
-    if (d < E.r[h]! + 0.5) {
+    const dh = Math.sqrt(dx * dx + dy * dy);
+    if (dh < E.r[h]! + 0.5) {
       E.tx[i] = h;
       E.ty[i] = E.gen[h]!;
       E.buff[h] = 3;
       setState(w, i, AS.Attached);
       return;
     }
-    const sp = speedOf(w, i);
     const dv = pathTo(w, i, E.x[h]!, E.y[h]!, false);
     faceToward(w, i, datan2(dv[1]!, dv[0]!), 12);
     integrate(w, i, dv[0]! * sp, dv[1]! * sp);
     return;
   }
-  // nobody to ride: hunt the player like a tick
-  const d = distToPlayer(w, i);
+  // hunting the player: close in (holding ~2.6 u while recharging), then crouch and leap
   const dv = pathTo(w, i, p.x, p.y, true);
-  const sp = speedOf(w, i);
-  faceToward(w, i, datan2(dv[1]!, dv[0]!), 10);
-  integrate(w, i, dv[0]! * sp, dv[1]! * sp);
-  if (d < 3.5 && E.cd[i]! <= 0) setState(w, i, AS.Windup);
+  faceToward(w, i, angleToPlayer(w, i), 10);
+  if (E.cd[i]! > 0 && d < 3.4) {
+    const rx = (p.x - E.x[i]!) / (d || 1);
+    const ry = (p.y - E.y[i]!) / (d || 1);
+    const radial = (d - 2.6) * 2.5;
+    const s2 = E.aux2[i]! * sp * 0.5;
+    integrate(w, i, rx * radial - ry * s2, ry * radial + rx * s2);
+  } else integrate(w, i, dv[0]! * sp, dv[1]! * sp);
+  if (p.alive && d < 4.6 && E.cd[i]! <= 0 && hasLOS(w, E.x[i]!, E.y[i]!, p.x, p.y)) setState(w, i, AS.Windup);
 }
 
 // ───────────────────────────── Brood (Матка): immobile mother; spits acid, births the next generation

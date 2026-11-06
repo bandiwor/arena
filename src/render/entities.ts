@@ -276,33 +276,88 @@ export class EntityRenderer {
       face += df * alpha;
       const st = E.st[k]!;
       const spawn = st === AS.Spawning ? Math.max(0, 1 - E.spawnT[k]! / def.spawnTime) : 1;
+      // ── pose: height + pitch (nose down > 0 / nose up < 0) + side wobble, per creature
       let h = 0;
-      if (st === AS.Leap) h = Math.sin(Math.min(1, E.stT[k]! / 0.22) * Math.PI) * 0.9;
-      if (t === ET.Worm) {
-        // under the floor: no model (the FX director draws the moving bulge)
+      let pitch = 0;
+      let side = 0;
+      let grow = 1;
+      const stT = E.stT[k]!;
+      const ch = E.charge[k]!;
+      if (st === AS.Leap) h = Math.sin(Math.min(1, stT / 0.22) * Math.PI) * 0.9;
+      if (t === ET.Swarmer) {
+        if (st === AS.Windup) {
+          // pounce coil: crouch low, rear back
+          h = -0.07 * ch;
+          pitch = -0.28 * ch;
+        } else if (st === AS.Leap) {
+          const pr = Math.min(1, stT / 0.24);
+          h = Math.sin(pr * Math.PI) * 0.95;
+          pitch = (pr - 0.45) * 0.8; // nose up on the way up, down on the way in
+        } else if (st === AS.Attack) {
+          // bite: rear up with jaws open, then snap forward
+          if (stT < 0.2) pitch = -0.5 * (stT / 0.2);
+          else pitch = 0.45 * Math.max(0, 1 - (stT - 0.2) / 0.16);
+        } else if (st === AS.Recover) h = -0.08 * Math.max(0, 1 - stT / 0.2); // landing squash
+      } else if (t === ET.Worm) {
+        // under the floor: no model (the FX director draws the moving mound)
         if (st === AS.Underground || st === AS.Windup) continue;
-        if (st === AS.Burrow) h = -Math.min(1, E.stT[k]! / 0.45) * 1.3;
-        else if (st === AS.Emerge) {
-          const e = Math.min(1, E.stT[k]! / 0.25);
-          h = -1.3 + e * 1.3 + Math.sin(e * Math.PI) * 0.9; // bursts up past the surface, settles
+        if (st === AS.Burrow) {
+          // dive: a forward lunge, beak first, sinking into the floor
+          const pr = Math.min(1, stT / 0.45);
+          pitch = 1.15 * Math.min(1, pr * 2.2);
+          h = -1.5 * Math.pow(pr, 1.4);
+        } else if (st === AS.Emerge) {
+          // bite from below: shoots up past the surface nose-first, then settles
+          const e = Math.min(1, stT / 0.35);
+          h = e < 0.42 ? -1.3 + (e / 0.42) * 2.5 : 1.2 - ((e - 0.42) / 0.58) * 1.2;
+          pitch = -1.2 * (1 - e);
+        } else if (st === AS.Stunned) {
+          // missed: stuck half out of the floor, thrashing
+          h = -0.38;
+          pitch = -0.35;
+          side = Math.sin(time * 15 + E.seed[k]! * 9) * 0.25;
+        } else if (st === AS.Attack) {
+          if (ch > 0) pitch = -0.55 * ch;
+          else pitch = 0.5 * Math.max(0, 1 - (stT - 0.35) / 0.16);
         }
       } else if (t === ET.ArcDrone) {
         h = 0.15 + Math.sin(time * 3 + E.seed[k]! * 9) * 0.12;
-      } else if (t === ET.Parasite && st === AS.Attached) {
-        const host = E.tx[k]! | 0;
-        h = enemyDef(E.type[host] ?? 0).height * 0.72;
+      } else if (t === ET.Parasite) {
+        grow = 1 + E.fed[k]! * 0.55; // swells as it drinks, shrinks while digesting
+        if (st === AS.Attached) {
+          const host = E.tx[k]! | 0;
+          h = host < 0 ? 0.95 : enemyDef(E.type[host] ?? 0).height * 0.72;
+          pitch = 0.5 + Math.sin(time * 18) * 0.12; // head buried, pulsing as it feeds
+        } else if (st === AS.Windup) {
+          h = -0.05 * ch;
+          pitch = -0.35 * ch;
+        } else if (st === AS.Leap) {
+          const pr = Math.min(1, stT / 0.3);
+          h = Math.sin(pr * Math.PI) * 0.75;
+          pitch = (pr - 0.5) * 0.9;
+        } else if (st === AS.Retreat) {
+          h = Math.sin(Math.min(1, stT / 0.35) * Math.PI) * 0.85;
+        } else if (st === AS.Stunned) {
+          side = Math.sin(time * 20) * 0.35;
+          h = 0;
+        }
       }
       const sp = Math.sqrt(E.vx[k]! * E.vx[k]! + E.vy[k]! * E.vy[k]!);
       // per-individual size variety (swarms read as a population, not clones)
       const vari = t === ET.Boss ? 1 : t === ET.Swarmer ? 0.82 + E.seed[k]! * 0.4 : 0.93 + E.seed[k]! * 0.14;
-      const scale = (def.r / (ENEMY_BASE_R[t] ?? def.r)) * (E.affix[k] ? 1.12 : 1) * vari;
+      const scale = (def.r / (ENEMY_BASE_R[t] ?? def.r)) * (E.affix[k] ? 1.12 : 1) * vari * grow;
       // stagger: tip away from knockback; lean into motion
       const kx = E.kx[k]!;
       const ky = E.ky[k]!;
       const km = Math.sqrt(kx * kx + ky * ky);
       const kk = Math.min(0.55, km * 0.07) / (km || 1);
       const lean = t === ET.Boss ? 0 : 0.035;
-      m.push(x, h, y, face, scale, E.flash[k]! * (def.r >= 1.5 ? 0.3 : 1), spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / Math.max(0.1, def.speed)), t === ET.Shielder && E.shield[k]! <= 0 ? 20 : st, E.affix[k] || E.buff[k] ? 1 : 0, kx * kk + E.vx[k]! * lean, ky * kk + E.vy[k]! * lean);
+      // pitch tips the top along the facing (nose down), side tips it across
+      const fc = Math.cos(face);
+      const fs = Math.sin(face);
+      const plx = fc * pitch - fs * side;
+      const ply = fs * pitch + fc * side;
+      m.push(x, h, y, face, scale, E.flash[k]! * (def.r >= 1.5 ? 0.3 : 1), spawn, E.charge[k]!, E.seed[k]!, E.walk[k]!, Math.min(1, sp / Math.max(0.1, def.speed)), t === ET.Shielder && E.shield[k]! <= 0 ? 20 : st, E.affix[k] || E.buff[k] ? 1 : 0, kx * kk + E.vx[k]! * lean + plx, ky * kk + E.vy[k]! * lean + ply);
       if (spawn > 0.2) this.shadow(x + 0.25, y + 0.2, def.r * 1.4 * scale, 0.6 * spawn);
     }
     // ghosts (death dissolve)
@@ -311,6 +366,13 @@ export class EntityRenderer {
       this.gT[g] = this.gT[g]! - dt;
       const d = 1 - Math.max(0, this.gT[g]!) / GHOST_TIME;
       const m = this.enemies[this.gType[g]!]!;
+      if (this.gType[g] === ET.Bloater) {
+        // Гнойник: inflates (white-hot) for the first third, then bursts apart
+        const sw = Math.min(1, d / 0.33);
+        if (d < 0.33) m.push(this.gX[g]!, 0, this.gY[g]!, this.gFace[g]!, 1 + sw * sw * 0.6, sw * 0.9, 1, 1, this.gSeed[g]!, 0, 0, 3, 0);
+        else m.push(this.gX[g]!, 0, this.gY[g]!, this.gFace[g]!, 1.6, 0, -Math.max(0.001, (d - 0.33) / 0.67), 0, this.gSeed[g]!, 0, 0, 0, 0);
+        continue;
+      }
       m.push(this.gX[g]!, 0, this.gY[g]!, this.gFace[g]!, 1, d < 0.2 ? 1 - d * 5 : 0, -Math.max(0.001, d), 0, this.gSeed[g]!, 0, 0, 0, 0);
     }
     for (const m of this.enemies) m.end(time);
