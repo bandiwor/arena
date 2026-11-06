@@ -3,7 +3,8 @@ import { WAVES } from '../sim/content/waves';
 import { WavePhase } from '../sim/world';
 import type { Game } from '../game';
 import type { ReplayData } from '../sim/replay';
-import { BOT_SKILLS } from '../sim/scenario';
+import { BOT_SKILLS, type BotSkill } from '../sim/scenario';
+import { modelSkills } from '../train/models';
 import { button, card, kbd, textField } from './kit';
 import { applySettings, loadSettings, saveSettings } from './settings';
 import { DIFF_COLORS, SettingsScreen } from './settings-screen';
@@ -21,6 +22,11 @@ function loadReplay(): ReplayData | null {
 }
 
 /** Main menu, pause and end screens. */
+/** built-in bots + models trained on train.html */
+function allBots(): BotSkill[] {
+  return [...BOT_SKILLS, ...modelSkills()];
+}
+
 export class Menus {
   private readonly main: HTMLElement;
   private readonly pause: HTMLElement;
@@ -177,14 +183,14 @@ export class Menus {
   }
 
   private buildBotPick(): void {
-    const sk = BOT_SKILLS.map((b, i) => card({ title: b.name, body: b.desc, accent: BOT_COLORS[i]!, selected: b.key === this.botKey, data: { bot: b.key } })).join('');
+    const sk = allBots().map((b, i) => card({ title: b.name, body: b.desc, accent: BOT_COLORS[i] ?? '#5cff9b', selected: b.key === this.botKey, data: { bot: b.key }, tag: b.key.startsWith('model:') ? 'обученная модель' : '' })).join('');
     const df = `<div class="k-seg">${DIFFICULTIES.map((d, i) => `<button data-bd="${i}" class="${i === this.botDiff ? 'on' : ''}" style="--ac:${DIFF_COLORS[i]}">${d.name}</button>`).join('')}</div>`;
     this.botPick.innerHTML = `<div class="col">
       <h1 class="title" style="font-size:56px">БОТ</h1>
       <div class="sub">УРОВЕНЬ МАСТЕРСТВА</div>
       <div class="diffs">${sk}</div>
       <div class="row"><span class="field">СЛОЖНОСТЬ</span>${df}</div>
-      <div class="row" style="margin-top:14px">${button('Смотреть', { variant: 'primary', action: 'botgo', icon: '▶' })}${button('Назад', { action: 'botback' })}</div>
+      <div class="row" style="margin-top:14px">${button('Смотреть', { variant: 'primary', action: 'botgo', icon: '▶' })}${button('Обучение ботов', { action: 'trainpage', icon: '⚗' })}${button('Назад', { action: 'botback' })}</div>
       <div class="help">во время просмотра: скорость <b>1–8×</b> · <b>взять управление</b> — продолжить забег самому · <b>ESC</b> — выход</div>
     </div>`;
   }
@@ -271,11 +277,14 @@ export class Menus {
         break;
       case 'botgo':
       case 'botagain': {
-        const skill = BOT_SKILLS.find((b) => b.key === this.botKey) ?? BOT_SKILLS[2]!;
+        const skill = allBots().find((b) => b.key === this.botKey) ?? BOT_SKILLS[2]!;
         const diff = a === 'botagain' ? g.config.difficulty : this.botDiff;
         g.startBot({ seed: (Date.now() % 1_000_000) >>> 0 || 1, difficulty: diff }, skill);
         break;
       }
+      case 'trainpage':
+        location.href = './train.html';
+        break;
       case 'takeover':
         g.takeOver();
         break;

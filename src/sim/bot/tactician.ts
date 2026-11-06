@@ -28,10 +28,120 @@ import { WavePhase, type World } from '../world';
 export interface TacticianOpts {
   /** decision interval in ticks (≈ reaction time) */
   reaction?: number;
+  /** trained weights (default: hand-tuned) */
+  weights?: TacticianWeights;
   /** aim error in radians (σ-ish) */
   aimJitter?: number;
   /** minimum seconds between weapon switches */
   hold?: number;
+}
+
+
+/**
+ * Trainable weights («геном» модели). Defaults = the hand-tuned Тактик. A trained model is a vector
+ * x ∈ ℝⁿ decoded by GENOME: positive weights are log-normal (value = default · e^{scale·x}), so
+ * x = 0 is exactly the default bot and evolution explores ×/÷ around it.
+ */
+export interface TacticianWeights {
+  bulletW: number;
+  bulletMargin: number;
+  markW: number;
+  padW: number;
+  trackW: number;
+  coolantW: number;
+  laserW: number;
+  laneW: number;
+  swellW: number;
+  sweepW: number;
+  meleeBuf: number;
+  meleeW: number;
+  wallW: number;
+  foresight: number;
+  rangeMul: number;
+  rangeW: number;
+  orbitW: number;
+  losW: number;
+  stability: number;
+  dashDanger: number;
+  dashCrowd: number;
+  threatWindup: number;
+  threatParasite: number;
+  threatOverseer: number;
+  hurtBonus: number;
+  stickiness: number;
+  switchMargin: number;
+  hold: number;
+  pylonCrowd: number;
+  biasScatter: number;
+  biasNeedler: number;
+  biasLauncher: number;
+  biasRail: number;
+  biasArc: number;
+  biasSing: number;
+}
+
+export interface GeneSpec {
+  key: keyof TacticianWeights;
+  name: string;
+  group: 'Опасность' | 'Позиция' | 'Рывок' | 'Цели' | 'Оружие';
+  def: number;
+  /** log-normal step per unit of x */
+  scale: number;
+  min: number;
+  max: number;
+}
+const g = (key: keyof TacticianWeights, name: string, group: GeneSpec['group'], def: number, scale: number, min: number, max: number): GeneSpec => ({ key, name, group, def, scale, min, max });
+export const GENOME: readonly GeneSpec[] = [
+  g('bulletW', 'Страх пуль', 'Опасность', 70, 0.5, 5, 400),
+  g('bulletMargin', 'Запас от пуль', 'Опасность', 0.45, 0.4, 0.05, 2),
+  g('markW', 'Метки ударов', 'Опасность', 70, 0.5, 5, 400),
+  g('padW', 'Прессовые площадки', 'Опасность', 90, 0.5, 5, 400),
+  g('trackW', 'Следы пил', 'Опасность', 35, 0.5, 2, 300),
+  g('coolantW', 'Живой охладитель', 'Опасность', 45, 0.5, 2, 300),
+  g('laserW', 'Лазеры', 'Опасность', 110, 0.5, 5, 500),
+  g('laneW', 'Линии атак', 'Опасность', 30, 0.5, 2, 300),
+  g('swellW', 'Раздувания и бугры', 'Опасность', 50, 0.5, 2, 300),
+  g('sweepW', 'Взмахи и сжатия', 'Опасность', 60, 0.5, 2, 300),
+  g('meleeBuf', 'Дистанция до тел', 'Позиция', 1.6, 0.4, 0.2, 6),
+  g('meleeW', 'Страх ближнего боя', 'Позиция', 16, 0.5, 1, 150),
+  g('wallW', 'Избегание стен', 'Позиция', 6, 0.5, 0.2, 60),
+  g('foresight', 'Взгляд вперёд', 'Позиция', 0.6, 0.5, 0.05, 3),
+  g('rangeMul', 'Предпочитаемая дистанция', 'Позиция', 1, 0.3, 0.3, 2.5),
+  g('rangeW', 'Держать дистанцию', 'Позиция', 1.2, 0.5, 0.05, 10),
+  g('orbitW', 'Кружение', 'Позиция', 1.5, 0.5, 0.05, 10),
+  g('losW', 'Линия огня', 'Позиция', 6, 0.5, 0.2, 40),
+  g('stability', 'Упорство плана', 'Позиция', 2.5, 0.5, 0.05, 20),
+  g('dashDanger', 'Порог рывка', 'Рывок', 60, 0.4, 10, 300),
+  g('dashCrowd', 'Рывок из окружения', 'Рывок', 4, 0.3, 2, 10),
+  g('threatWindup', 'Приоритет замахов', 'Цели', 3.2, 0.4, 0.5, 15),
+  g('threatParasite', 'Приоритет паразитов', 'Цели', 2, 0.4, 0.3, 10),
+  g('threatOverseer', 'Приоритет Надзирателя', 'Цели', 2.4, 0.4, 0.3, 10),
+  g('hurtBonus', 'Добивание раненых', 'Цели', 0.6, 0.5, 0, 4),
+  g('stickiness', 'Липкость цели', 'Цели', 1.3, 0.2, 1, 3),
+  g('switchMargin', 'Порог смены оружия', 'Оружие', 1.25, 0.15, 1.02, 2.5),
+  g('hold', 'Минимум на оружии, с', 'Оружие', 2.2, 0.4, 0.5, 8),
+  g('pylonCrowd', 'Толпа для пилона', 'Цели', 3, 0.3, 1, 8),
+  g('biasScatter', 'Склонность: дробь', 'Оружие', 1, 0.3, 0.3, 3),
+  g('biasNeedler', 'Склонность: иглы', 'Оружие', 1, 0.3, 0.3, 3),
+  g('biasLauncher', 'Склонность: мортира', 'Оружие', 1, 0.3, 0.3, 3),
+  g('biasRail', 'Склонность: рельса', 'Оружие', 1, 0.3, 0.3, 3),
+  g('biasArc', 'Склонность: дуговой рельс', 'Оружие', 1, 0.3, 0.3, 3),
+  g('biasSing', 'Склонность: сингулярность', 'Оружие', 1, 0.3, 0.3, 3),
+];
+
+export function defaultWeights(): TacticianWeights {
+  const w = {} as TacticianWeights;
+  for (const s of GENOME) w[s.key] = s.def;
+  return w;
+}
+/** genome vector → weights (x = 0 → defaults) */
+export function decodeGenome(x: ArrayLike<number>): TacticianWeights {
+  const w = {} as TacticianWeights;
+  GENOME.forEach((s, i) => {
+    const v = s.def * Math.exp(s.scale * (x[i] ?? 0));
+    w[s.key] = Math.max(s.min, Math.min(s.max, v));
+  });
+  return w;
 }
 
 const DIRS = 16;
@@ -60,7 +170,7 @@ function segDist2(px: number, py: number, ax: number, ay: number, bx: number, by
 }
 
 /** danger of standing at (x, y) τ seconds from now */
-function danger(w: World, x: number, y: number, tau: number): number {
+function danger(w: World, x: number, y: number, tau: number, W: TacticianWeights): number {
   const p = w.player;
   const pr = p.r;
   let c = 0;
@@ -72,9 +182,9 @@ function danger(w: World, x: number, y: number, tau: number): number {
     const by = B.y[b]! + B.vy[b]! * tau;
     const dx = bx - x;
     const dy = by - y;
-    const rr = B.r[b]! + pr + 0.45;
+    const rr = B.r[b]! + pr + W.bulletMargin;
     const d2 = dx * dx + dy * dy;
-    if (d2 < rr * rr) c += 70 * (1 - Math.sqrt(d2) / rr) + 25;
+    if (d2 < rr * rr) c += W.bulletW * (1 - Math.sqrt(d2) / rr) + W.bulletW * 0.36;
     else if (d2 < (rr + 1) * (rr + 1)) c += 4;
   }
   // ── telegraphed marks (stampers, PRESS, overseer) and stamp pads
@@ -84,14 +194,14 @@ function danger(w: World, x: number, y: number, tau: number): number {
     const tHit = M.fill[i]! - M.t[i]!; // <0: hot now
     if (tHit > tau + 0.35) continue;
     const pad = 0.5;
-    if (M.inside(i, x, y, pad)) c += tHit <= 0 ? 90 : 70;
+    if (M.inside(i, x, y, pad)) c += tHit <= 0 ? W.markW * 1.3 : W.markW;
   }
   const D = w.pads;
   for (let k = 0; k < D.count; k++) {
     if (Math.abs(x - D.x[k]!) > 1.6 || Math.abs(y - D.y[k]!) > 1.6) continue;
     const ph = padPhase(w, k) + tau;
     const cyc = ph % PAD_CYCLE;
-    if (cyc >= PAD_MARK - 0.2 && cyc < PAD_RETRACT + 0.1) c += cyc >= PAD_HOT - 0.15 ? 90 : 25;
+    if (cyc >= PAD_MARK - 0.2 && cyc < PAD_RETRACT + 0.1) c += cyc >= PAD_HOT - 0.15 ? W.padW : W.padW * 0.28;
   }
   // ── saw tracks (armed or arming soon)
   const T = w.tracks;
@@ -99,7 +209,7 @@ function danger(w: World, x: number, y: number, tau: number): number {
     if (!T.alive[i]) continue;
     const a = T.age[i]! + tau;
     if (a < TRACK_ARM - 0.1 || a >= TRACK_LIFE) continue;
-    if (segDist2(x, y, T.x0[i]!, T.y0[i]!, T.x1[i]!, T.y1[i]!) < 1.0) c += 35;
+    if (segDist2(x, y, T.x0[i]!, T.y0[i]!, T.x1[i]!, T.y1[i]!) < 1.0) c += W.trackW;
   }
   // ── live coolant / coolant next to an overloading pylon
   const PO = w.pools;
@@ -109,9 +219,9 @@ function danger(w: World, x: number, y: number, tau: number): number {
       const dy = y - PO.y[k]!;
       const r = PO.r[k]! + 0.4;
       if (dx * dx + dy * dy > r * r) continue;
-      if (PO.live[k]! > tau) c += 45;
+      if (PO.live[k]! > tau) c += W.coolantW;
       else if (w.act === 2) {
-        for (let q = 0; q < w.pylons.count; q++) if (w.pylons.state[q] === 1) c += 30;
+        for (let q = 0; q < w.pylons.count; q++) if (w.pylons.state[q] === 1) c += W.coolantW * 0.66;
       }
     }
   }
@@ -123,7 +233,7 @@ function danger(w: World, x: number, y: number, tau: number): number {
     const ex = L.x[k]! + Math.cos(a) * L.len[k]!;
     const ey = L.y[k]! + Math.sin(a) * L.len[k]!;
     const wdt = L.width[k]! + pr + 0.6;
-    if (segDist2(x, y, L.x[k]!, L.y[k]!, ex, ey) < wdt * wdt) c += L.warm[k]! > tau + 0.2 ? 15 : 110;
+    if (segDist2(x, y, L.x[k]!, L.y[k]!, ex, ey) < wdt * wdt) c += L.warm[k]! > tau + 0.2 ? W.laserW * 0.14 : W.laserW;
   }
   // ── enemies: bodies, wind-ups and attack lanes
   const E = w.enemies;
@@ -139,16 +249,16 @@ function danger(w: World, x: number, y: number, tau: number): number {
     const ch = E.charge[i]!;
     // underground worm: the mound bites from below
     if (t === ET.Worm && st === AS.Windup) {
-      if (d < 2.4) c += 30 + ch * 70;
+      if (d < 2.4) c += W.swellW * (0.6 + ch * 1.4);
       continue;
     }
     if (st === AS.Underground) continue;
     // swelling bloater
-    if (t === ET.Bloater && st === AS.Windup && d < 4.0) c += 40 + ch * 50;
+    if (t === ET.Bloater && st === AS.Windup && d < 4.0) c += W.swellW * (0.8 + ch);
     // area sweeps (arm, brood contraction, hauler clamp)
-    if (t === ET.Arm && st === AS.Windup && d < E.r[i]! + 3.6) c += 60;
-    if (t === ET.Brood && E.ty[i]! > 0 && d < E.r[i]! + 3) c += 60;
-    if (t === ET.Hauler && E.burst[i] === 2 && d < 2.9) c += 70;
+    if (t === ET.Arm && st === AS.Windup && d < E.r[i]! + 3.6) c += W.sweepW;
+    if (t === ET.Brood && E.ty[i]! > 0 && d < E.r[i]! + 3) c += W.sweepW;
+    if (t === ET.Hauler && E.burst[i] === 2 && d < 2.9) c += W.sweepW * 1.15;
     // attack lanes: charges, dives, arrows, hooks, arcs, gunner bursts
     if (st === AS.Windup || st === AS.Dash || st === AS.Leap) {
       let len = 0;
@@ -172,13 +282,13 @@ function danger(w: World, x: number, y: number, tau: number): number {
         const ry = y - E.y[i]!;
         const along = rx * lx + ry * ly;
         const side = Math.abs(rx * -ly + ry * lx);
-        if (along > -0.5 && along < len && side < wid + pr) c += 30 + ch * 45;
+        if (along > -0.5 && along < len && side < wid + pr) c += W.laneW * (1 + ch * 1.5);
       }
     }
     // bodies: melee creatures want contact — keep a buffer, more for heavy hitters
     if (MELEE.has(t)) {
-      const buf = E.r[i]! + pr + (t === ET.Charger || t === ET.Skiff ? 2.4 : 1.6);
-      if (d < buf) c += (buf - d) * (t === ET.Brood || t === ET.Assembler ? 30 : 16);
+      const buf = E.r[i]! + pr + W.meleeBuf * (t === ET.Charger || t === ET.Skiff ? 1.5 : 1);
+      if (d < buf) c += (buf - d) * W.meleeW * (t === ET.Brood || t === ET.Assembler ? 1.9 : 1);
     } else if (d < E.r[i]! + pr + 0.6) c += 10;
   }
   return c;
@@ -198,7 +308,10 @@ interface Ctx {
 }
 
 /** how good is weapon `id` right now (1 = average) */
-function weaponScore(id: number, c: Ctx, targetD: number): number {
+function weaponScore(id: number, c: Ctx, targetD: number, W: TacticianWeights): number {
+  return weaponBase(id, c, targetD) * (id === WP.Scatter ? W.biasScatter : id === WP.Needler ? W.biasNeedler : id === WP.Launcher ? W.biasLauncher : id === WP.Rail ? W.biasRail : id === WP.ArcRail ? W.biasArc : id === WP.Singularity ? W.biasSing : 1);
+}
+function weaponBase(id: number, c: Ctx, targetD: number): number {
   if (c.total === 0) return id === WP.Pulse ? 1 : 0.8;
   switch (id) {
     case WP.Pulse:
@@ -222,7 +335,8 @@ function weaponScore(id: number, c: Ctx, targetD: number): number {
 export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: InputCmd) => void {
   const reaction = o.reaction ?? 6;
   const jitter = o.aimJitter ?? 0.03;
-  const hold = o.hold ?? 2.2;
+  const W = o.weights ?? defaultWeights();
+  const hold = o.hold ?? W.hold;
   let last = -1e9;
   let mx = 0;
   let my = 0;
@@ -278,12 +392,12 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
         // threat ranking
         let s = 10 / (d + 3);
         const st = E.st[i]!;
-        if (st === AS.Windup) s *= t === ET.Archer || t === ET.Gunner || t === ET.ArcDrone || t === ET.Hauler ? 3.2 : 1.8;
-        if (t === ET.Parasite) s *= E.st[i] === AS.Attached && (E.tx[i]! | 0) === -1 ? 6 : 2;
-        if (t === ET.Overseer) s *= 2.4;
+        if (st === AS.Windup) s *= t === ET.Archer || t === ET.Gunner || t === ET.ArcDrone || t === ET.Hauler ? W.threatWindup : 1 + (W.threatWindup - 1) * 0.36;
+        if (t === ET.Parasite) s *= E.st[i] === AS.Attached && (E.tx[i]! | 0) === -1 ? W.threatParasite * 3 : W.threatParasite;
+        if (t === ET.Overseer) s *= W.threatOverseer;
         if (t === ET.Bloater && d < 7) s *= 1.8;
         if (t === ET.Arm || t === ET.Assembler) s *= E.shield[i]! > 0 && t === ET.Assembler ? 0.05 : 1.2;
-        s *= 1 + (1 - E.hp[i]! / E.maxHp[i]!) * 0.6; // finish what's hurt
+        s *= 1 + (1 - E.hp[i]! / E.maxHp[i]!) * W.hurtBonus; // finish what's hurt
         if (!hasLOS(w, p.x, p.y, E.x[i]!, E.y[i]!)) s *= 0.25;
         if (t === ET.Shielder && E.shield[i]! > 0) {
           const f = E.face[i]!;
@@ -296,7 +410,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
         }
       }
       // sticky target: only switch for a clearly better one
-      if (!(curS > 0 && curS * 1.3 >= bestS)) {
+      if (!(curS > 0 && curS * W.stickiness >= bestS)) {
         target = best;
         targetGen = best >= 0 ? E.gen[best]! : -1;
       }
@@ -330,27 +444,27 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
         }
         const dx = px - p.x;
         const dy = py - p.y;
-        if (n >= 3 && dx * dx + dy * dy < 20 * 20 && hasLOS(w, p.x, p.y, px - Math.sign(dx) * 0.9, py - Math.sign(dy) * 0.9)) pylonAim = pi;
+        if (n >= W.pylonCrowd && dx * dx + dy * dy < 20 * 20 && hasLOS(w, p.x, p.y, px - Math.sign(dx) * 0.9, py - Math.sign(dy) * 0.9)) pylonAim = pi;
       }
       // ── weapon choice (with hysteresis and hold time)
       const td = target >= 0 ? Math.hypot(E.x[target]! - p.x, E.y[target]! - p.y) : 99;
-      const curScore = weaponScore(p.slots[p.cur]!, ctx, td);
+      const curScore = weaponScore(p.slots[p.cur]!, ctx, td, W);
       let bestSlot = p.cur;
       let bestW = curScore;
       for (let s = 0; s < p.slotCount; s++) {
-        const sc = weaponScore(p.slots[s]!, ctx, td);
+        const sc = weaponScore(p.slots[s]!, ctx, td, W);
         if (sc > bestW) {
           bestW = sc;
           bestSlot = s;
         }
       }
       const held = (tick - lastSwitch) / 60;
-      wantSlot = bestSlot !== p.cur && bestW >= curScore * 1.25 && held >= hold && p.dashT <= 0 ? bestSlot : -1;
+      wantSlot = bestSlot !== p.cur && bestW >= curScore * W.switchMargin && held >= hold && p.dashT <= 0 ? bestSlot : -1;
 
       // ── movement: score candidates on the danger map
       const speed = 9.5 * p.stats.speedMul * w.phys.playerSpeed;
       // preferred range for this weapon
-      const want = wd.id === WP.Scatter ? 5 : wd.id === WP.Rail || wd.id === WP.ArcRail ? 13 : wd.id === WP.Launcher ? 10 : 9;
+      const want = (wd.id === WP.Scatter ? 5 : wd.id === WP.Rail || wd.id === WP.ArcRail ? 13 : wd.id === WP.Launcher ? 10 : 9) * W.rangeMul;
       let bk = DIRS;
       let bc = 1e9;
       for (let k = 0; k <= DIRS; k++) {
@@ -365,27 +479,27 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
             x += w.lanes.dx[ln]! * 4.6 * tau;
             y += w.lanes.dy[ln]! * 4.6 * tau;
           }
-          cost += danger(w, x, y, tau) * (q === 0 ? 1.4 : q === 1 ? 1 : 0.6);
+          cost += danger(w, x, y, tau, W) * (q === 0 ? 1.4 : q === 1 ? 1 : W.foresight);
         }
         // walls and corners (also: pinned against a wall = no escape)
         const ex = p.x + CAND_X[k]! * speed * 0.5;
         const ey = p.y + CAND_Y[k]! * speed * 0.5;
         const wx = Math.max(0, Math.abs(ex) - 30);
         const wy = Math.max(0, Math.abs(ey) - 18);
-        cost += (wx * wx + wy * wy) * 6;
+        cost += (wx * wx + wy * wy) * W.wallW;
         // range preference + orbit around the target
         if (target >= 0) {
           const dx = E.x[target]! - ex;
           const dy = E.y[target]! - ey;
           const d = Math.sqrt(dx * dx + dy * dy);
-          cost += Math.abs(d - want) * 1.2;
+          cost += Math.abs(d - want) * W.rangeW;
           const tx = -dy * orbit;
           const ty = dx * orbit;
-          cost -= ((CAND_X[k]! * tx + CAND_Y[k]! * ty) / (d || 1)) * 1.5;
-          if (!hasLOS(w, ex, ey, E.x[target]!, E.y[target]!)) cost += 6;
+          cost -= ((CAND_X[k]! * tx + CAND_Y[k]! * ty) / (d || 1)) * W.orbitW;
+          if (!hasLOS(w, ex, ey, E.x[target]!, E.y[target]!)) cost += W.losW;
         }
         // stability: keep the current plan unless something is clearly better
-        if (k === prevK) cost -= 2.5;
+        if (k === prevK) cost -= W.stability;
         if (cost < bc) {
           bc = cost;
           bk = k;
@@ -398,7 +512,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
       // ── dash economy
       dashQ = false;
       if (p.dashCd <= 0 && p.dashT <= 0) {
-        const nowDanger = danger(w, p.x + CAND_X[bk]! * speed * 0.15, p.y + CAND_Y[bk]! * speed * 0.15, 0.15);
+        const nowDanger = danger(w, p.x + CAND_X[bk]! * speed * 0.15, p.y + CAND_Y[bk]! * speed * 0.15, 0.15, W);
         let surrounded = 0;
         let latched = false;
         for (let i = 0; i < E.hi; i++) {
@@ -409,7 +523,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
           const dy = E.y[i]! - p.y;
           if (dx * dx + dy * dy < 9) surrounded++;
         }
-        const must = nowDanger >= 60 || p.pullT > 0 || latched || surrounded >= 4;
+        const must = nowDanger >= W.dashDanger || p.pullT > 0 || latched || surrounded >= Math.round(W.dashCrowd);
         if (must) {
           // dash where the landing (~5 u away, after 0.17 s) is safest
           let dk = bk;
@@ -417,7 +531,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
           for (let k = 0; k < DIRS; k++) {
             const x = p.x + CAND_X[k]! * 5.1;
             const y = p.y + CAND_Y[k]! * 5.1;
-            let cost = danger(w, x, y, 0.2) + danger(w, x, y, 0.45) * 0.6;
+            let cost = danger(w, x, y, 0.2, W) + danger(w, x, y, 0.45, W) * 0.6;
             const wx = Math.max(0, Math.abs(x) - 31);
             const wy = Math.max(0, Math.abs(y) - 19);
             cost += (wx + wy) * 40;

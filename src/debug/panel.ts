@@ -108,6 +108,7 @@ export class DebugPanel {
         'Страницы',
         this.btn('Лаборатория ассетов ↗', 'page', 'lab.html', false, 'модели, анимации, эффекты, звуки, пост-обработка') +
         this.btn('UI-кит ↗', 'page', 'kit.html', false, 'все элементы интерфейса во всех состояниях') +
+        this.btn('Обучение ботов ↗', 'page', 'train.html', false, 'эволюция ботов, награды, сохранённые модели') +
           this.btn('Пустая песочница', 'scene', 'arena') +
           this.btn('Игра с ?debug ↗', 'page', '?debug'),
       )}

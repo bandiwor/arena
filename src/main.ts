@@ -17,7 +17,15 @@ const params = new URLSearchParams(location.search);
 // boot screen: one gesture → audio unlock + synthesis progress (+ fullscreen/landscape on touch devices)
 const shell = new Shell(game, ui, () => menus.ensureAudio());
 const skipBoot = ['scene', 'wave', 'autostart', 'selfplay', 'nosplash'].some((k) => params.has(k));
-void shell.boot(skipBoot);
+void shell.boot(skipBoot).then(() => {
+  // ?watch=<model id> — opened from the training page: watch the trained model play
+  const watch = params.get('watch');
+  if (!watch) return;
+  void import('./train/models').then(({ modelSkills }) => {
+    const skill = modelSkills().find((b) => b.key === `model:${watch}`);
+    if (skill) game.startBot({ seed: (Date.now() % 1_000_000) >>> 0 || 1, difficulty: parseInt(params.get('diff') ?? '1', 10) }, skill);
+  });
+});
 
 function attractSim(): Sim {
   const s = new Scenario(Date.now() >>> 0, 1, 'sandbox').player({ god: true, weapons: ['pulse', 'scatter', 'rail'] });

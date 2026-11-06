@@ -1,0 +1,49 @@
+/* NULL//TRAIN page */
+html:has(body.train-page), body.train-page { height: auto; overflow: auto; }
+body.train-page { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
+.tr-head { display: flex; justify-content: space-between; align-items: flex-end; padding: 22px 26px 6px; gap: 16px; }
+.tr-head .title { font-size: clamp(36px, 5vw, 64px); }
+.tr-head .sub { margin: 6px 0 0; }
+.tr-back { font: 700 12px var(--mono); color: var(--cyan); text-decoration: none; letter-spacing: 0.1em; }
+.tr-grid { display: grid; grid-template-columns: 290px minmax(0, 1fr) 470px; gap: 14px; padding: 12px 26px 40px; align-items: start; }
+@media (max-width: 1400px) { .tr-grid { grid-template-columns: 270px minmax(0, 1fr); } .tr-side { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; } }
+@media (max-width: 860px) { .tr-grid { grid-template-columns: 1fr; padding: 10px 12px 30px; } .tr-side { grid-template-columns: 1fr; } }
+.tr-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tr-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.k-panel.tr-models, .tr-main > .k-panel, .tr-side > .k-panel { padding: 14px 16px; }
+.tr-h { margin: 0 0 10px; font: 700 11px var(--mono); letter-spacing: 0.3em; color: var(--violet); }
+.tr-h small { color: var(--muted); letter-spacing: 0.05em; font-weight: 400; margin-left: 6px; }
+.tr-mlist { display: grid; grid-auto-rows: max-content; align-content: start; gap: 6px; max-height: 360px; overflow-y: auto; margin-bottom: 10px; }
+.tr-model { flex: none; height: auto; text-align: left; background: rgb(8 8 20 / 0.6); border: 1px solid rgb(127 134 168 / 0.25); border-left: 3px solid rgb(127 134 168 / 0.4); color: var(--ink); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font: inherit; }
+.tr-model b { font: 600 14px var(--font); }
+.tr-model small { font: 400 10px var(--mono); color: var(--muted); }
+.tr-model em { font: 700 10px var(--mono); font-style: normal; }
+.tr-model em.up { color: var(--lime); }
+.tr-model em.down { color: var(--magenta); }
+.tr-model.on { border-color: var(--cyan); border-left-color: var(--cyan); box-shadow: 0 0 18px -8px var(--cyan); }
+.tr-mact { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.tr-runbar { display: flex; gap: 14px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.tr-status { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tr-status b { font: 600 14px var(--font); color: var(--ink); }
+.tr-status small { font: 400 11px var(--mono); color: var(--muted); }
+.tr-chart { width: 100%; height: auto; display: block; border: 1px solid rgb(127 134 168 / 0.15); }
+.tr-legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.tr-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.tr-metrics div { background: rgb(255 255 255 / 0.03); border: 1px solid rgb(127 134 168 / 0.15); padding: 8px 10px; }
+.tr-metrics b { display: block; font: 700 18px var(--mono); color: var(--cyan); }
+.tr-metrics span { font: 400 10px var(--mono); color: var(--muted); }
+.tr-empty { font: 400 12px var(--mono); color: var(--muted); }
+.tr-presets { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; }
+.tr-preview canvas { width: 100%; height: auto; display: block; border: 1px solid rgb(46 242 255 / 0.2); image-rendering: auto; }
+.tr-prev-ctl { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.tr-prev-info { font: 400 11px var(--mono); color: var(--muted); }
+.tr-ggroup h5 { margin: 8px 0 4px; font: 700 10px var(--mono); letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; }
+.tr-gene { display: grid; grid-template-columns: 1fr 120px 52px; gap: 8px; align-items: center; font: 400 11px var(--mono); color: var(--ink); padding: 1px 0; }
+.tr-gene span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-gene i { position: relative; height: 6px; background: rgb(255 255 255 / 0.06); }
+.tr-gene i::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgb(127 134 168 / 0.5); }
+.tr-gene u { position: absolute; top: 0; bottom: 0; }
+.tr-gene u.p { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.tr-gene u.n { background: var(--magenta); box-shadow: 0 0 6px var(--magenta); }
+.tr-gene b { text-align: right; color: var(--muted); font-weight: 400; }
+.tr-star { font: 400 11px var(--mono); color: var(--lime); }
