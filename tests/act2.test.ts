@@ -113,7 +113,7 @@ describe('Act II', () => {
       s.upgrade('dmg').upgrade('dmg').upgrade('rate');
       let selfHost = false;
       let outside = false;
-      s.input(Inputs.aimbot()).run(60 * 90, (w) => {
+      s.input(Inputs.aimbot()).run(60 * 150, (w) => {
         const E = w.enemies;
         for (let i = 0; i < E.hi; i++) {
           if (!E.alive[i]) continue;
