@@ -1,5 +1,6 @@
 import { Ev } from '../../core/events';
 import { ARENA_HH, ARENA_HW, AS, BK, DT, ET, Mat, MAX_MARKS, MAX_TRACKS } from '../constants';
+import { datan2 } from '../../core/detmath';
 import { enemyDef } from '../content/enemies';
 import type { World } from '../world';
 import { damageEnemy, hurtPlayer, killEnemy } from './entities';
@@ -22,7 +23,8 @@ export const PAD_RETRACT = 3.1;
 export const PAD_DMG = 35;
 export const TRACK_ARM = 0.3;
 export const TRACK_LIFE = 2.0;
-export const PYLON_CHARGE = 1.0;
+/** pylon accumulator: shots fill it (bullet damage / FILL), it leaks LEAK/s; full → OVERLOAD s → discharge → COOL s */
+export const PYLON = { fill: 110, leak: 0.035, overload: 0.8, cool: 5, radius: 11, strikes: 4, dmg: 40, poolRadius: 14, live: 2.5, liveTick: 0.5, liveDmg: 8 } as const;
 export const ARC_RANGE = 14;
 export const ARC_CHAIN = 6;
 
@@ -158,30 +160,111 @@ function updatePylons(w: World): void {
   const Y = w.pylons;
   const P = w.pillars;
   for (let k = 0; k < Y.count; k++) {
-    if (Y.charge[k]! <= 0) continue;
-    Y.charge[k] = Y.charge[k]! - DT;
-    if (Y.charge[k]! > 0) continue;
-    Y.charge[k] = 0;
     const pi = Y.pillar[k]!;
-    arcFrom(w, P.x[pi]!, P.y[pi]!, ARC_RANGE, 2 + w.player.stats.arcChain, 20, true);
+    const x = P.x[pi]!;
+    const y = P.y[pi]!;
+    if (Y.state[k] === 0) {
+      if (Y.charge[k]! >= 1) {
+        Y.state[k] = 1;
+        Y.timer[k] = PYLON.overload;
+        w.events.push(Ev.Overload, x, y, PYLON.radius, PYLON.overload);
+      } else Y.charge[k] = Math.max(0, Y.charge[k]! - PYLON.leak * DT);
+    } else if (Y.state[k] === 1) {
+      Y.timer[k] = Y.timer[k]! - DT;
+      if (Y.timer[k]! <= 0) {
+        dischargePylon(w, x, y);
+        Y.state[k] = 2;
+        Y.timer[k] = PYLON.cool;
+        Y.charge[k] = 0;
+      }
+    } else {
+      Y.timer[k] = Y.timer[k]! - DT;
+      if (Y.timer[k]! <= 0) Y.state[k] = 0;
+    }
   }
 }
 
-/** Shot pylon starts charging (called from bullet collision). */
-export function chargePylon(w: World, pillarIndex: number): void {
+/** a shot fed pylon `pillarIndex` (called from bullet / rail collision) */
+export function chargePylon(w: World, pillarIndex: number, dmg = 10): void {
   const Y = w.pylons;
   for (let k = 0; k < Y.count; k++) {
-    if (Y.pillar[k] !== pillarIndex || Y.charge[k]! > 0) continue;
-    Y.charge[k] = PYLON_CHARGE;
-    w.events.push(Ev.PylonCharge, w.pillars.x[pillarIndex]!, w.pillars.y[pillarIndex]!);
+    if (Y.pillar[k] !== pillarIndex || Y.state[k] !== 0) continue;
+    Y.charge[k] = Math.min(1, Y.charge[k]! + dmg / PYLON.fill);
+    w.events.push(Ev.PylonCharge, w.pillars.x[pillarIndex]!, w.pillars.y[pillarIndex]!, Y.charge[k]!);
   }
 }
 
+const strikeIdx = new Int32Array(16);
+const strikeD = new Float32Array(16);
 /**
- * Electric arc from (x, y): first target = nearest conductive body standing in coolant within
- * `range`; then chains through up to `chain` more conductive targets (in coolant or machines)
- * within ARC_CHAIN. Deterministic: ties broken by lowest id, the player is id −1.
+ * Discharge: arcs strike the nearest enemies within PYLON.radius (4 + Дуговая цепь, each may chain
+ * once to a machine), and every coolant pool within PYLON.poolRadius goes live for PYLON.live s.
  */
+function dischargePylon(w: World, x: number, y: number): void {
+  const E = w.enemies;
+  const n0 = PYLON.strikes + w.player.stats.arcChain;
+  let n = 0;
+  const R2 = PYLON.radius * PYLON.radius;
+  for (let i = 0; i < E.hi; i++) {
+    if (!E.alive[i] || E.st[i] === AS.Spawning || E.st[i] === AS.Underground) continue;
+    const dx = E.x[i]! - x;
+    const dy = E.y[i]! - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > R2) continue;
+    // keep the n0 nearest (insertion into a tiny sorted list)
+    let at = n < n0 ? n : -1;
+    if (at < 0 && d2 < strikeD[n0 - 1]!) at = n0 - 1;
+    if (at < 0) continue;
+    while (at > 0 && strikeD[at - 1]! > d2) {
+      strikeD[at] = strikeD[at - 1]!;
+      strikeIdx[at] = strikeIdx[at - 1]!;
+      at--;
+    }
+    strikeD[at] = d2;
+    strikeIdx[at] = i;
+    if (n < n0) n++;
+  }
+  for (let s = 0; s < n; s++) {
+    const i = strikeIdx[s]!;
+    if (!E.alive[i]) continue;
+    w.events.push(Ev.Arc, x, y, E.x[i]!, E.y[i]!, 0);
+    const ex = E.x[i]!;
+    const ey = E.y[i]!;
+    shortEnemy(w, i);
+    damageEnemy(w, i, PYLON.dmg, datan2(ey - y, ex - x), 4, 1, 255, false);
+    // chain once to the nearest other machine
+    let best = -1;
+    let bd = ARC_CHAIN * ARC_CHAIN;
+    for (let j = 0; j < E.hi; j++) {
+      if (j === i || !E.alive[j] || E.st[j] === AS.Spawning || E.st[j] === AS.Underground) continue;
+      if (enemyDef(E.type[j]!).material !== Mat.Machine) continue;
+      const dx = E.x[j]! - ex;
+      const dy = E.y[j]! - ey;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bd) {
+        bd = d2;
+        best = j;
+      }
+    }
+    if (best >= 0) {
+      w.events.push(Ev.Arc, ex, ey, E.x[best]!, E.y[best]!, 0);
+      shortEnemy(w, best);
+      damageEnemy(w, best, PYLON.dmg * 0.5, 0, 0, 1, 255, false);
+    }
+  }
+  // electrify nearby coolant
+  const PO = w.pools;
+  for (let k = 0; k < PO.count; k++) {
+    const dx = PO.x[k]! - x;
+    const dy = PO.y[k]! - y;
+    if (dx * dx + dy * dy > PYLON.poolRadius * PYLON.poolRadius) continue;
+    PO.live[k] = PYLON.live;
+    w.events.push(Ev.Arc, x, y, PO.x[k]!, PO.y[k]!, 0);
+    w.events.push(Ev.PoolLive, PO.x[k]!, PO.y[k]!, PO.r[k]!);
+  }
+  w.events.push(Ev.Discharge, x, y, PYLON.radius, n);
+}
+
 export function arcFrom(w: World, x: number, y: number, range: number, chain: number, dmg: number, poolOnlyFirst: boolean): number {
   const E = w.enemies;
   const p = w.player;
@@ -301,6 +384,31 @@ function updateTracks(w: World): void {
 
 function updatePools(w: World): void {
   const P = w.pools;
+  // live (electrified) coolant: ticks damage + shorts on everything standing in it
+  const E = w.enemies;
+  const p = w.player;
+  for (let k = 0; k < P.count; k++) {
+    const L0 = P.live[k]!;
+    if (L0 <= 0) continue;
+    const L1 = Math.max(0, L0 - DT);
+    P.live[k] = L1;
+    const tick = Math.floor(L0 / PYLON.liveTick) !== Math.floor(L1 / PYLON.liveTick) || L1 === 0;
+    if (!tick || L1 === 0) continue;
+    const r2 = P.r[k]! * P.r[k]!;
+    for (let i = 0; i < E.hi; i++) {
+      if (!E.alive[i] || E.st[i] === AS.Spawning || E.st[i] === AS.Underground) continue;
+      const dx = E.x[i]! - P.x[k]!;
+      const dy = E.y[i]! - P.y[k]!;
+      if (dx * dx + dy * dy > r2) continue;
+      shortEnemy(w, i, 0.6);
+      damageEnemy(w, i, PYLON.liveDmg, 0, 0, 1, 255, false);
+    }
+    if (p.alive && !p.stats.insulated) {
+      const dx = p.x - P.x[k]!;
+      const dy = p.y - P.y[k]!;
+      if (dx * dx + dy * dy < r2) hurtPlayer(w, PYLON.liveDmg, P.x[k]!, P.y[k]!, 51);
+    }
+  }
   for (let k = P.count - 1; k >= 0; k--) {
     if (P.life[k]! < 0) continue;
     P.life[k] = P.life[k]! - DT;
@@ -313,7 +421,6 @@ function updatePools(w: World): void {
   let dyn = 0;
   for (let k = 0; k < P.count; k++) if (P.life[k]! >= 0) dyn++;
   if (dyn >= 5) return;
-  const p = w.player;
   for (let tries = 0; tries < 8; tries++) {
     const x = w.rng.range(-ARENA_HW + 4, ARENA_HW - 4);
     const y = w.rng.range(-ARENA_HH + 4, ARENA_HH - 4);

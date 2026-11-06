@@ -3,7 +3,7 @@ import { Inputs, Scenario } from '../src/sim/scenario';
 import { AS, Btn, ET } from '../src/sim/constants';
 import { Ev, EV_STRIDE } from '../src/core/events';
 import { buildArenaLayout, WavePhase, type World } from '../src/sim/world';
-import { PAD_CYCLE, padPhase, PAD_HOT, PAD_RETRACT } from '../src/sim/systems/foundry';
+import { PAD_CYCLE, padPhase, PAD_HOT, PAD_RETRACT, PYLON } from '../src/sim/systems/foundry';
 import { DT } from '../src/sim/constants';
 
 const count = (w: World, t: number): number => {
@@ -75,32 +75,61 @@ describe('Act III · Foundry mechanics', () => {
     expect(hurtOutside).toBe(false);
   });
 
-  it('a shot pylon arcs into whoever stands in coolant; insulation protects the player', () => {
+  it('pylon accumulates shots, overloads, strikes nearby enemies and electrifies coolant', () => {
     const s = foundry();
     const w = s.world;
-    const pool = 0;
     const pyl = w.pylons.pillar[0]!;
-    s.noAI().spawn('gunner', w.pools.x[pool]!, w.pools.y[pool]!);
+    const px = w.pillars.x[pyl]!;
+    const py = w.pillars.y[pyl]!;
+    s.noAI().spawn('gunner', px + 4, py - 3); // near the pylon, NOT in coolant
+    s.player({ x: px + 7, y: py + 3, god: true });
+    let overload = 0;
+    let discharge = 0;
+    let live = false;
+    s.input((_ww, _t, c) => {
+      c.ax = px;
+      c.ay = py;
+      c.btn = Btn.Fire;
+    }).run(60 * 4, (ww) => {
+      overload += count(ww, Ev.Overload);
+      discharge += count(ww, Ev.Discharge);
+      for (let k = 0; k < ww.pools.count; k++) if (ww.pools.live[k]! > 0) live = true;
+    });
+    expect(overload).toBeGreaterThan(0);
+    expect(discharge).toBe(1); // cooldown: exactly one strike within 4 s
+    expect(live).toBe(true);
+    expect(w.enemies.hp[0]!).toBeLessThan(w.enemies.maxHp[0]! - 30);
+    expect(w.pylons.state[0]).toBe(2);
+  });
+
+  it('live coolant hurts whoever stands in it; insulation protects the player', () => {
+    for (const insulated of [false, true]) {
+      const s = foundry();
+      if (insulated) s.upgrade('insulated');
+      const w = s.world;
+      s.player({ x: w.pools.x[0]!, y: w.pools.y[0]! });
+      const hp = w.player.hp;
+      w.pools.live[0] = PYLON.live;
+      s.run(60 * 2);
+      if (insulated) expect(w.player.hp).toBe(hp);
+      else expect(w.player.hp).toBeLessThan(hp);
+    }
+  });
+
+  it('a rail ending on a pylon fills it at once', () => {
+    const s = foundry().player({ weapons: ['rail'] });
+    const w = s.world;
+    const pyl = w.pylons.pillar[0]!;
     s.player({ x: w.pillars.x[pyl]! + 6, y: w.pillars.y[pyl]! });
-    let arcs = 0;
-    s.input((ww, _t, c) => {
+    let over = false;
+    s.input((ww, t, c) => {
       c.ax = ww.pillars.x[pyl]!;
       c.ay = ww.pillars.y[pyl]!;
-      c.btn = _t < 10 ? Btn.Fire : 0;
-    }).run(120, (ww) => (arcs += count(ww, Ev.Arc)));
-    expect(arcs).toBeGreaterThan(0);
-    expect(w.enemies.hp[0]!).toBeLessThan(w.enemies.maxHp[0]!);
-    // insulated player standing in coolant is not hurt by the pylon
-    const s2 = foundry().upgrade('insulated');
-    const w2 = s2.world;
-    s2.player({ x: w2.pools.x[0]!, y: w2.pools.y[0]! });
-    const hp = w2.player.hp;
-    s2.input((ww, t, c) => {
-      c.ax = ww.pillars.x[ww.pylons.pillar[0]!]!;
-      c.ay = ww.pillars.y[ww.pylons.pillar[0]!]!;
-      c.btn = t < 10 ? Btn.Fire : 0;
-    }).run(120);
-    expect(w2.player.hp).toBe(hp);
+      c.btn = t < 4 ? Btn.Fire : 0;
+    }).run(30, (ww) => {
+      if (count(ww, Ev.Overload) > 0) over = true;
+    });
+    expect(over).toBe(true);
   });
 
   it('gear mite spins up, rolls, bounces and gets dizzy', () => {

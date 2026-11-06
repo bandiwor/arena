@@ -446,8 +446,10 @@ export class EntityRenderer {
           if (Y.pillar[j] !== k) continue;
           m = this.pylons;
           scale = P.r[k]! / 0.8;
-          charge = Y.charge[j]! > 0 ? 1 - Y.charge[j]! : 0;
-          flash = Math.max(flash, charge * charge * 0.8);
+          // accumulator: core swells with the stored charge; overload throbs white; cooldown goes dark
+          const stY = Y.state[j]!;
+          charge = stY === 1 ? 1 : stY === 2 ? 0 : Y.charge[j]!;
+          if (stY === 1) flash = Math.max(flash, 0.35 + 0.35 * Math.sin(time * 40));
         }
         if (m === this.blocks) scale = P.r[k]! / 0.8;
       }

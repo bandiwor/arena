@@ -1,3 +1,4 @@
+import { chargePylon } from './foundry';
 import { Ev } from '../../core/events';
 import { angDiff, dcos, dsin, datan2, segDist2 } from '../../core/detmath';
 import { AS, ARENA_HH, ARENA_HW, Btn, DT, Mat, Team, WP } from '../constants';
@@ -244,6 +245,7 @@ function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity
   if (dy < 0) tMax = Math.min(tMax, (-ARENA_HH - y) / dy);
   // ray vs pillars
   const P = w.pillars;
+  let railPillar = -1;
   for (let k = 0; k < P.count; k++) {
     const ox = P.x[k]! - x;
     const oy = P.y[k]! - y;
@@ -255,9 +257,14 @@ function fireRail(w: World, x: number, y: number, a: number, dmg: number, rarity
     const d2 = cx * cx + cy * cy;
     if (d2 < r * r) {
       const th = t - Math.sqrt(r * r - d2);
-      if (th < tMax) tMax = Math.max(0, th);
+      if (th < tMax) {
+        tMax = Math.max(0, th);
+        railPillar = k;
+      }
     }
   }
+  // a rail that ends on an arc pylon pours its whole charge into it
+  if (railPillar >= 0 && w.pylons.count > 0) chargePylon(w, railPillar, dmg);
   const ex = x + dx * tMax;
   const ey = y + dy * tMax;
   // collect hits sorted by distance

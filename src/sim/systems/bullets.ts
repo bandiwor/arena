@@ -89,7 +89,7 @@ export function updateBullets(w: World): void {
       const d2 = dx * dx + dy * dy;
       if (d2 < r * r) {
         hitWall = true;
-        if (B.team[i] === Team.Player && w.pylons.count > 0) chargePylon(w, k);
+        if (B.team[i] === Team.Player && w.pylons.count > 0) chargePylon(w, k, B.dmg[i]!);
         if (B.bounce[i]! > 0) {
           const d = Math.sqrt(d2) || 0.001;
           const nx = dx / d;

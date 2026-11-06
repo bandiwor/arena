@@ -41,7 +41,7 @@ export const Ev = {
   PadStamp: 39, // x y
   LaneWarn: 40, // lane index
   LaneFlip: 41, // lane index
-  PylonCharge: 42, // x y
+  PylonCharge: 42, // x y level (a shot fed the accumulator)
   Arc: 43, // x0 y0 x1 y1 hitPlayer
   MarkHit: 44, // x y r
   HookFire: 45, // x y angle
@@ -59,6 +59,9 @@ export const Ev = {
   Spray: 56, // x y (bloater hit: pus jets)
   Order: 57, // x y radius (Overseer «РАЗВОРОТ» pulse)
   TetherSnap: 58, // x y (Overseer died: its mites are dazed)
+  Overload: 59, // x y radius time (pylon full: discharge incoming)
+  Discharge: 60, // x y radius strikes
+  PoolLive: 61, // x y r (coolant electrified)
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

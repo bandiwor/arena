@@ -193,12 +193,15 @@ export class Pools {
   readonly r = new Float32Array(MAX_POOLS);
   /** seconds left (−1 = permanent) — flood mutator pools evaporate */
   readonly life = new Float32Array(MAX_POOLS);
+  /** >0: electrified by a pylon discharge (seconds left) — hurts and shorts whatever stands in it */
+  readonly live = new Float32Array(MAX_POOLS);
   add(x: number, y: number, r: number, life = -1): void {
     if (this.count >= MAX_POOLS) return;
     this.x[this.count] = x;
     this.y[this.count] = y;
     this.r[this.count] = r;
     this.life[this.count] = life;
+    this.live[this.count] = 0;
     this.count++;
   }
   remove(k: number): void {
@@ -207,6 +210,7 @@ export class Pools {
     this.y[k] = this.y[n]!;
     this.r[k] = this.r[n]!;
     this.life[k] = this.life[n]!;
+    this.live[k] = this.live[n]!;
   }
   /** index of a pool containing (x, y), or −1 */
   at(x: number, y: number): number {
@@ -269,10 +273,17 @@ export class Pads {
 }
 
 /** Arc pylons (also registered as pillars for collision). charge > 0 while building up. */
+/**
+ * Arc pylons (also registered as pillars for collision): accumulators. Player shots fill `charge`
+ * (0..1, leaks slowly); full → `state` 1 overload (telegraph, `timer` counts down) → discharge →
+ * `state` 2 cooldown (`timer` counts down) → back to 0.
+ */
 export class Pylons {
   count = 0;
   readonly pillar = new Int8Array(MAX_PYLONS);
   readonly charge = new Float32Array(MAX_PYLONS);
+  readonly state = new Uint8Array(MAX_PYLONS);
+  readonly timer = new Float32Array(MAX_PYLONS);
 }
 
 /** Telegraphed impact zones (stamper marks, PRESS stamps): fill, then hot for a moment. */
@@ -717,13 +728,14 @@ export function buildArenaLayout(w: World): void {
     // Литейный цех: machine blocks, two arc pylons, four conveyor lanes, stamp pad pairs, coolant
     P.add(-16, -12, 1.5);
     P.add(16, 12, 1.5);
-    P.add(-28, 12, 1.3);
-    P.add(28, -12, 1.3);
     const py = w.pylons;
     py.count = 0;
-    for (const [x, y] of [[-10, 6], [10, -6]] as const) {
+    // four arc pylons, each next to a coolant pool
+    for (const [x, y] of [[-10, 6], [10, -6], [-27, 11], [27, -11]] as const) {
       py.pillar[py.count] = P.count;
       py.charge[py.count] = 0;
+      py.state[py.count] = 0;
+      py.timer[py.count] = 0;
       py.count++;
       P.add(x, y, 0.8);
     }

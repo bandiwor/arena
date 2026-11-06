@@ -223,7 +223,7 @@ uniform float uAct;      // current sector: 0 Карантин, 1 Плоть, 2 
 uniform float uPrevAct;  // sector shown outside the synthesis front
 uniform float uSynthR;   // synthesis wave front radius (<0: none / complete)
 uniform float uScanR;    // decompile scan ring radius (<0: none)
-uniform vec3 uPools[12]; // x, y, r
+uniform vec4 uPools[12]; // x, y, r, live (electrified 0..1)
 uniform int uPoolCount;
 uniform vec4 uLanes[4];  // cx, cy, hw, hh
 uniform vec4 uLaneS[4];  // dx, dy, scroll, warn(0..1) | frozen → negative warn
@@ -327,7 +327,7 @@ void main(){
     if(uAct > 0.5 && uAct < 1.5){
       for(int k=0;k<12;k++){
         if(k >= uPoolCount) break;
-        vec3 pl = uPools[k];
+        vec4 pl = uPools[k];
         float d = length(p - pl.xy) / pl.z + (fbm(p * 0.8 + float(k)) - 0.5) * 0.18;
         if(d < 1.08){
           float inside = 1.0 - smoothstep(0.92, 1.0, d);
@@ -423,7 +423,7 @@ void main(){
     // coolant: violet, shimmering at ~4 Hz, conducts the arcs
     for(int k=0;k<12;k++){
       if(k >= uPoolCount) break;
-      vec3 pl = uPools[k];
+      vec4 pl = uPools[k];
       float d = length(p - pl.xy) / pl.z + (vnoise(p * 1.4 + float(k) * 7.0 + uTime * 0.4) - 0.5) * 0.1;
       if(d < 1.1){
         float inside = 1.0 - smoothstep(0.94, 1.0, d);
@@ -432,9 +432,13 @@ void main(){
         float n1 = vnoise(p * 1.6 + vec2(uTime * 0.6, -uTime * 0.4));
         float n2 = vnoise(p * 1.6 - vec2(uTime * 0.5, uTime * 0.7) + 4.0);
         float caust = pow(1.0 - abs(n1 - n2), 14.0);
-        vec3 liquid = vec3(0.006, 0.003, 0.016) + vec3(0.16, 0.06, 0.5) * caust * (0.55 + shim * 0.45) + litF * vec3(0.02, 0.015, 0.05);
+        // live: a pylon discharge electrified it — the filaments flare, the whole pool crackles
+        float live = clamp(pl.w, 0.0, 1.0);
+        float crackle = step(0.5, fract(uTime * 23.0 + d * 3.0)) * live;
+        vec3 liquid = vec3(0.006, 0.003, 0.016) + vec3(0.16, 0.06, 0.5) * caust * (0.55 + shim * 0.45) * (1.0 + live * 5.0) + litF * vec3(0.02, 0.015, 0.05);
+        liquid += vec3(0.12, 0.06, 0.4) * live * (0.5 + crackle);
         steelCol = mix(steelCol, liquid, inside);
-        steelCol += vec3(0.25, 0.1, 0.9) * exp(-pow((d - 1.0) * 18.0, 2.0)) * (0.45 + shim * 0.3);
+        steelCol += vec3(0.25, 0.1, 0.9) * exp(-pow((d - 1.0) * 18.0, 2.0)) * (0.45 + shim * 0.3 + live * 2.5);
       }
     }
     col = mix(col, steelCol, st);
@@ -520,7 +524,7 @@ export class Floor {
         uPrevAct: { value: 0 },
         uSynthR: { value: -1 },
         uScanR: { value: -1 },
-        uPools: { value: Array.from({ length: 12 }, () => new Vector3()) },
+        uPools: { value: Array.from({ length: 12 }, () => new Vector4()) },
         uPoolCount: { value: 0 },
         uLanes: { value: Array.from({ length: 4 }, () => new Vector4()) },
         uLaneS: { value: Array.from({ length: 4 }, () => new Vector4()) },

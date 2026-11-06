@@ -1,7 +1,7 @@
 import { Ev, EV_STRIDE } from '../core/events';
 import { Rng } from '../core/rng';
 import { AS, ARENA_HH, ARENA_HW, BK, ET, Mat, MAX_LASERS, MAX_MARKS, MAX_TRACKS, Team, WP } from '../sim/constants';
-import { TRACK_ARM, TRACK_LIFE } from '../sim/systems/foundry';
+import { PYLON, TRACK_ARM, TRACK_LIFE } from '../sim/systems/foundry';
 import { enemyDef } from '../sim/content/enemies';
 import { MUTATORS } from '../sim/content/mutators';
 import { weaponDef } from '../sim/content/weapons';
@@ -976,8 +976,33 @@ export class FxDirector {
           J.addTrauma(0.12 * this.near(x, y));
           break;
         case Ev.PylonCharge:
-          this.sfx('pylon_charge', x, y, 0.6, 1, 0.2, 3);
-          this.timed(QK.Ring, QM.Billboard, x, 2.6, y, 0, 3, 3, C_ARC, 2.5, 1);
+          // a shot fed the accumulator: sparks at the coil, a tick rising in pitch with the level
+          this.burst(4, x, 1 + a * 2, y, 0, TAU, 2, 6, 2, 0.2, C_ARC, 2.5, 0.06, 3, 0, PS.Spark, 0);
+          this.sfx('hit_crystal', x, y, 0.25, 0.8 + a * 0.9, 0.04, 3);
+          break;
+        case Ev.Overload:
+          this.sfx('pylon_charge', x, y, 0.9, 1.25, 0.2, 2);
+          this.timed(QK.Flash, QM.Billboard, x, 3, y, 0, 3.5, 3.5, C_ARC, 2.5, 0.2);
+          J.addChroma(0.3);
+          break;
+        case Ev.Discharge:
+          // the strike: a violet flash, shock ring over the radius, heavy crackle
+          this.timed(QK.Flash, QM.Billboard, x, 2.5, y, 0, 7, 7, C_ARC, 3, 0.18);
+          this.timed(QK.Flash, QM.Billboard, x, 2.5, y, 0, 3, 3, K_WHITE, 1.5, 0.08);
+          this.timed(QK.Ring, QM.Ground, x, 0.08, y, 0, a * 2, a * 2, C_ARC, 2.4, 0.4);
+          this.burst(40, x, 2.5, y, 0, TAU, 4, 14, 6, 0.4, C_ARC, 3, 0.08, 3, 6, PS.Spark, 0);
+          this.d.lights.flash(x, y, 2, 18, 10, 4, 20, 0.3);
+          this.d.floor.ripple(x, y, 1.2);
+          this.wave(x, y, 0.8);
+          J.addTrauma(0.35 * this.near(x, y));
+          J.addGlitch(0.25);
+          J.stop(0.04);
+          this.sfx('arc_zap', x, y, 1, 0.7, 0.1);
+          this.sfx('shoot_arcrail', x, y, 0.7, 0.8, 0.1);
+          break;
+        case Ev.PoolLive:
+          this.timed(QK.Ring, QM.Ground, x, 0.1, y, 0, a * 2.6, a * 2.6, C_ARC, 2.2, 0.35);
+          this.sfx('arc_zap', x, y, 0.6, 1.1, 0.05, 4);
           break;
         case Ev.Arc: {
           // x,y → a,b; c = hit the player
@@ -1511,24 +1536,64 @@ export class FxDirector {
       Qb.push(QK.Needle, QM.Ground, (T.x0[i]! + T.x1[i]!) / 2, 0.06, (T.y0[i]! + T.y1[i]!) / 2, Math.atan2(dy, dx), len + 0.4, armed ? 0.55 : 0.3, C_AMBER[0]! * k * fade, C_AMBER[1]! * k * fade, C_AMBER[2]! * k * fade, 0, 0, i);
       if (armed && r.chance(0.04 * fade)) P.emit(T.x0[i]! + dx * r.float(), 0.1, T.y0[i]! + dy * r.float(), 0, r.range(0.4, 1.2), 0, 0.6, 0.04, 0.035, 0.03, 0.4, 1, -0.2, PS.Smoke, 0.4);
     }
-    // arc pylons: an idle violet crown; while charged the coil sparks and crackles up the mast
+    // arc pylons (accumulators): three level rings fill as you shoot it; full → the discharge
+    // radius is telegraphed; after the strike it sits dark while cooling
     const Y = w.pylons;
     for (let k = 0; k < Y.count; k++) {
       const pi = Y.pillar[k]!;
       const x = w.pillars.x[pi]!;
       const y = w.pillars.y[pi]!;
-      const ch = Y.charge[k]! > 0 ? 1 - Y.charge[k]! : 0;
+      const stY = Y.state[k]!;
+      const c = Y.charge[k]!;
       const fl = 0.7 + 0.3 * Math.sin(time * 11 + k);
-      L.add(x, y, 3, 5 + ch * 9, C_ARC[0]! * (0.5 + ch * 3) * fl, C_ARC[1]! * (0.5 + ch * 3) * fl, C_ARC[2]! * (0.5 + ch * 3) * fl);
-      if (ch > 0) {
-        Qb.push(QK.Ring, QM.Billboard, x, 3, y, 0, 2 + ch * 2, 2 + ch * 2, C_ARC[0]! * 2, C_ARC[1]! * 2, C_ARC[2]! * 2, 0, 1 - ch, k);
-        for (let s = 0; s < 2; s++) {
+      if (stY === 2) {
+        // cooling: dim, smoking
+        L.add(x, y, 3, 3, C_ARC[0]! * 0.25, C_ARC[1]! * 0.25, C_ARC[2]! * 0.25);
+        if (r.chance(0.1)) P.emit(x + r.sym() * 0.3, 3, y + r.sym() * 0.3, 0, r.range(0.5, 1.2), 0, 1.2, C_STEAM[0]!, C_STEAM[1]!, C_STEAM[2]!, 0.4, 1, -0.3, PS.Smoke, 0.5);
+        continue;
+      }
+      const lv = stY === 1 ? 1 : c;
+      L.add(x, y, 3, 4 + lv * 10, C_ARC[0]! * (0.4 + lv * 3) * fl, C_ARC[1]! * (0.4 + lv * 3) * fl, C_ARC[2]! * (0.4 + lv * 3) * fl);
+      // level rings at the coil heights + a floor gauge
+      for (let ring = 0; ring < 3; ring++) {
+        const f = Math.max(0, Math.min(1, lv * 3 - ring));
+        if (f <= 0) continue;
+        const kk = 1.2 + f * 1.6;
+        Qb.push(QK.TeleCircle, QM.Ground, x, 0.95 + ring * 0.6, y, 0, 1.25, 1.25, C_ARC[0]! * kk, C_ARC[1]! * kk, C_ARC[2]! * kk, 0, f, k * 3 + ring);
+      }
+      Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 3.2, 3.2, C_ARC[0]! * 1.4, C_ARC[1]! * 1.4, C_ARC[2]! * 1.4, 0, lv, k);
+      if (stY === 1) {
+        // overload: the strike radius is drawn and crackles
+        const pr = 1 - Y.timer[k]! / PYLON.overload;
+        const R = PYLON.radius * 2;
+        Qb.push(QK.TeleCircle, QM.Ground, x, 0.08, y, 0, R, R, C_ARC[0]! * 0.7, C_ARC[1]! * 0.7, C_ARC[2]! * 0.7, 0, pr, k + 40);
+        if (r.chance(0.7)) {
           const pa = r.float() * TAU;
-          P.emit(x + Math.cos(pa) * 0.5, r.range(0.4, 3), y + Math.sin(pa) * 0.5, Math.cos(pa) * 3, r.range(-2, 4), Math.sin(pa) * 3, 0.18, C_ARC[0]! * 3, C_ARC[1]! * 3, C_ARC[2]! * 3, 0.07, 3, 0, PS.Spark, 0);
+          const pr2 = r.range(1, PYLON.radius);
+          this.timed(QK.Lightning, QM.Ground, x + Math.cos(pa) * pr2 * 0.5, 0.5, y + Math.sin(pa) * pr2 * 0.5, pa, pr2, 0.6, C_ARC, 1.6, 0.06);
         }
-      } else if (r.chance(0.04)) {
+        for (let sp = 0; sp < 3; sp++) {
+          const pa = r.float() * TAU;
+          P.emit(x + Math.cos(pa) * 0.5, r.range(0.4, 3), y + Math.sin(pa) * 0.5, Math.cos(pa) * 4, r.range(-2, 4), Math.sin(pa) * 4, 0.18, C_ARC[0]! * 3, C_ARC[1]! * 3, C_ARC[2]! * 3, 0.07, 3, 0, PS.Spark, 0);
+        }
+        this.d.juice.addTrauma(dt * 0.3 * this.near(x, y));
+      } else if (r.chance(0.02 + lv * 0.15)) {
         const pa = r.float() * TAU;
-        this.timed(QK.Lightning, QM.Billboard, x + Math.cos(pa) * 0.35, 3.1, y + Math.sin(pa) * 0.35, pa, 1.1, 0.5, C_ARC, 1.8, 0.07);
+        this.timed(QK.Lightning, QM.Billboard, x + Math.cos(pa) * 0.35, 3.1, y + Math.sin(pa) * 0.35, pa, 0.8 + lv, 0.5, C_ARC, 1.8, 0.07);
+      }
+    }
+    // live coolant: arcs dance over electrified pools
+    for (let k = 0; k < w.pools.count; k++) {
+      const lv = w.pools.live[k]!;
+      if (lv <= 0) continue;
+      const px = w.pools.x[k]!;
+      const py = w.pools.y[k]!;
+      const pr = w.pools.r[k]!;
+      L.add(px, py, 0.4, pr * 2.5, C_ARC[0]! * 2, C_ARC[1]! * 2, C_ARC[2]! * 2);
+      if (r.chance(0.6)) {
+        const pa = r.float() * TAU;
+        const rr = r.float() * pr * 0.8;
+        this.timed(QK.Lightning, QM.Ground, px + Math.cos(pa) * rr, 0.12, py + Math.sin(pa) * rr, r.float() * TAU, r.range(0.8, 2), 0.5, C_ARC, 2, 0.06);
       }
     }
     // coolant pools: a cold violet glow pools on the steel; fresh flood pools spray as they spread

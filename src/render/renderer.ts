@@ -187,8 +187,8 @@ export class GameRenderer {
     const tt = w.wave.t + alpha / 60;
     FU['uScanR']!.value = inTrans && tt < TRANS_SYNTH ? tt * 24 : -1;
     FU['uSynthR']!.value = inTrans && tt >= TRANS_SYNTH ? (tt - TRANS_SYNTH) * SYNTH_SPEED : -1;
-    const PU = FU['uPools']!.value as { set(a: number, b: number, c: number): void }[];
-    for (let k = 0; k < w.pools.count; k++) PU[k]!.set(w.pools.x[k]!, w.pools.y[k]!, w.pools.r[k]!);
+    const PU = FU['uPools']!.value as Vector4[];
+    for (let k = 0; k < Math.min(12, w.pools.count); k++) PU[k]!.set(w.pools.x[k]!, w.pools.y[k]!, w.pools.r[k]!, Math.min(1, w.pools.live[k]! * 2));
     FU['uPoolCount']!.value = Math.min(12, w.pools.count);
     this.foundryUniforms(w, fxDt);
 
