@@ -49,6 +49,10 @@ let spawnLoop = false;
 function meshFor(def: ModelDef): InstancedModel {
   if (def.key === 'player') return R.entities.player;
   if (def.key === 'pillar') return R.entities.pillars;
+  if (def.key === 'growth') return R.entities.growths;
+  if (def.key === 'block') return R.entities.blocks;
+  if (def.key === 'pylon') return R.entities.pylons;
+  if (def.key === 'piston') return R.entities.pistons;
   const t = ENEMIES.findIndex((e) => e.key === def.key);
   return R.entities.enemies[t]!;
 }
@@ -67,10 +71,33 @@ function resetWorld(): void {
 function showModel(key: string): void {
   resetWorld();
   current = modelByKey(key);
+  // arena props are not enemies: the renderer picks the pillar model by the world's act
+  const PROPS: Record<string, () => void> = {
+    pillar: () => world.pillars.add(0, 0, 1),
+    growth: () => {
+      world.act = 1;
+      world.pillars.add(0, 0, 1);
+    },
+    block: () => {
+      world.act = 2;
+      world.pillars.add(0, 0, 0.8);
+    },
+    pylon: () => {
+      world.act = 2;
+      world.pillars.add(0, 0, 0.8);
+      world.pylons.count = 1;
+      world.pylons.pillar[0] = 0;
+    },
+    piston: () => {
+      world.act = 2;
+      world.pads.add(0, 0, 0);
+    },
+  };
   if (key === 'player') world.player.alive = true;
-  else if (key === 'pillar') world.pillars.add(0, 0, 1);
+  else if (PROPS[key]) PROPS[key]!();
   else {
     const t = ENEMIES.findIndex((e) => e.key === key);
+    if (t < 0) throw new Error(`lab: model '${key}' is neither an enemy nor a known prop`);
     enemyId = spawnEnemy(world, t as 0, 0, 0, { instant: true });
     world.enemies.face[enemyId] = 0;
   }
