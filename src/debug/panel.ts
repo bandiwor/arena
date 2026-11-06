@@ -1,4 +1,6 @@
 import { ENEMIES } from '../sim/content/enemies';
+import { ENEMY_LORE, RACES } from '../sim/content/races';
+import { ET, Mat } from '../sim/constants';
 import { MUTATORS } from '../sim/content/mutators';
 import { WEAPONS } from '../sim/content/weapons';
 import { BOT_SKILLS } from '../sim/scenario';
@@ -64,6 +66,36 @@ export class DebugPanel {
     return `<button class="${on ? 'on' : ''}" data-act="${act}" data-arg="${arg}"${title ? ` title="${title}"` : ''}>${label}</button>`;
   }
 
+  /** «Спавн рядом», split by race (with the race colour); bosses and mini-bosses get their own group */
+  private spawnSection(): string {
+    const BOSSES: number[] = [ET.Boss, ET.Brood, ET.Press, ET.Assembler, ET.Arm];
+    const ACT = ['I', 'II', 'III'];
+    const groups: { title: string; color: string; keys: typeof ENEMIES }[] = [
+      { title: 'Плоть', color: '#ff3a52', keys: [] },
+      { title: 'Линия 9 · машины', color: '#ffa126', keys: [] },
+      { title: 'Оранжерея', color: '#b6ff3b', keys: [] },
+      { title: 'Решётка', color: '#8fa6ff', keys: [] },
+      { title: 'Боссы и мини-боссы', color: '#c77dff', keys: [] },
+    ];
+    const byMat: Record<number, number> = { [Mat.Flesh]: 0, [Mat.Machine]: 1, [Mat.Plant]: 2, [Mat.Crystal]: 3, [Mat.Void]: 4 };
+    for (const e of ENEMIES) groups[BOSSES.includes(e.type) ? 4 : byMat[e.material]!]!.keys.push(e);
+    const body = groups
+      .filter((g) => g.keys.length)
+      .map((g) => {
+        const btns = g.keys
+          .map((e) => {
+            const race = RACES[e.material];
+            const home = race.home >= 0 ? ` · дом: акт ${ACT[race.home]}` : '';
+            const tip = `${race.name}${home} · HP ${e.hp}\n${ENEMY_LORE[e.key] ?? ''}`.replace(/"/g, "'");
+            return this.btn(e.name, 'spawn', e.key, false, tip);
+          })
+          .join('');
+        return `<div class="dbg-sub" style="--sc:${g.color}"><h5>${g.title} <small>${g.keys.length}</small></h5><div class="dbg-btns">${btns}</div></div>`;
+      })
+      .join('');
+    return `<section><h4>Спавн рядом</h4>${body}</section>`;
+  }
+
   private render(): void {
     const g = this.game;
     const w = g.world;
@@ -96,7 +128,7 @@ export class DebugPanel {
           this.btn('Перф-панель', 'perf', '', this.overlay.showPanel),
       )}
       ${this.section('Оверлей', ovs.map((k) => this.btn(k, 'overlay', k, ov === k)).join(''))}
-      ${this.section('Спавн рядом', ENEMIES.map((e) => this.btn(e.name, 'spawn', e.key)).join(''))}
+      ${this.spawnSection()}
       ${this.section('Оружие', WEAPONS.map((x) => this.btn(x.name, 'weapon', x.key)).join(''))}
       ${this.section('Мутаторы', MUTATORS.map((m) => this.btn(m.name, 'mutator', m.key, (w.mutators & (1 << m.id)) !== 0)).join(''))}
       ${this.section(

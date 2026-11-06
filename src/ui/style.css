@@ -520,3 +520,8 @@ body.kit-page { background: radial-gradient(ellipse at top, #120c26, var(--void)
 .kit-note { font: 400 12px/1.5 var(--mono); color: var(--muted); }
 .kit-code { display: block; margin: 12px 0 8px; padding: 8px 10px; font: 400 11px/1.5 var(--mono); color: #b8ffcf; background: rgb(0 0 0 / 0.4); border-left: 2px solid var(--violet); white-space: pre-wrap; word-break: break-word; }
 .kit-log { margin: 0; min-height: 120px; font: 400 12px/1.6 var(--mono); color: var(--cyan); }
+
+.dbg-sub { margin: 0 0 8px; padding-left: 8px; border-left: 2px solid var(--sc, var(--cyan)); }
+.dbg-sub h5 { margin: 0 0 4px; font: 700 10px var(--mono); letter-spacing: 0.18em; color: var(--sc, var(--cyan)); text-transform: uppercase; }
+.dbg-sub h5 small { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+.dbg-sub button:hover { border-color: var(--sc, var(--cyan)); color: var(--sc, var(--cyan)); }
