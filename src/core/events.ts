@@ -57,6 +57,8 @@ export const Ev = {
   Drain: 54, // x y dmg (one feeding tick)
   ShakeOff: 55, // x y (dash tore the parasite off)
   Spray: 56, // x y (bloater hit: pus jets)
+  Order: 57, // x y radius (Overseer «РАЗВОРОТ» pulse)
+  TetherSnap: 58, // x y (Overseer died: its mites are dazed)
 } as const;
 export type EvType = (typeof Ev)[keyof typeof Ev];
 

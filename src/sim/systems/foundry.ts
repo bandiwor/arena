@@ -13,7 +13,8 @@ import { damageEnemy, hurtPlayer, killEnemy } from './entities';
  *  - telegraphed impact marks (stampers, PRESS) and saw tracks.
  */
 export const LANE_WARN = 1.5;
-export const LANE_SPEED = 2.5;
+/** belt speed: about half the player's run — you feel it, a dash still outruns it */
+export const LANE_SPEED = 4.6;
 export const PAD_CYCLE = 3.9;
 export const PAD_MARK = 2.0;
 export const PAD_HOT = 2.8;

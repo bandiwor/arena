@@ -288,6 +288,8 @@ export class Marks {
   readonly hot = new Float32Array(MAX_MARKS);
   readonly dmg = new Float32Array(MAX_MARKS);
   readonly src = new Uint8Array(MAX_MARKS);
+  /** enemy index that placed it (-1 = none): the render draws an aim beam from it while filling */
+  readonly own = new Int16Array(MAX_MARKS).fill(-1);
   hi = 0;
   add(x: number, y: number, r: number, fill: number, hot: number, dmg: number, src: number, square = false): number {
     for (let i = 0; i < MAX_MARKS; i++) {
@@ -297,6 +299,7 @@ export class Marks {
       this.y[i] = y;
       this.r[i] = r;
       this.square[i] = square ? 1 : 0;
+      this.own[i] = -1;
       this.t[i] = 0;
       this.fill[i] = fill;
       this.hot[i] = hot;
@@ -726,10 +729,11 @@ export function buildArenaLayout(w: World): void {
     }
     const L = w.lanes;
     L.count = 0;
-    L.add(-20, -3, 4, 1, 1, 0, 0);
-    L.add(20, 3, 4, 1, -1, 0, 6);
-    L.add(0, -18, 1, 4, 0, 1, 3);
-    L.add(0, 18, 1, 4, 0, -1, 9);
+    // long belts (16 u horizontal, 13 u vertical) — they should shape movement, not be a strip
+    L.add(-21, -3, 8, 1.2, 1, 0, 0);
+    L.add(21, 3, 8, 1.2, -1, 0, 6);
+    L.add(0, -16.5, 1.2, 6.5, 0, 1, 3);
+    L.add(0, 16.5, 1.2, 6.5, 0, -1, 9);
     const D = w.pads;
     D.count = 0;
     D.add(-6, -14, 0);

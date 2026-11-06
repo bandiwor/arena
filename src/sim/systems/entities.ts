@@ -18,6 +18,7 @@ export function vulnMul(t: number, st: number): number {
   if (t === ET.Worm && st === AS.Stunned) return 1.5;
   if (t === ET.Worm && st === AS.Emerge) return 1.3;
   if (t === ET.Parasite && st === AS.Stunned) return 1.5;
+  if (t === ET.Overseer && st === AS.Guard) return 1.5; // ring dropped, core open
   return 1;
 }
 export const SHIELD_DOWN = 4;
@@ -285,7 +286,21 @@ export function killEnemy(w: World, i: number, angle: number, rarity: number, _w
   const p = w.player;
   if (p.stats.lifesteal > 0 && p.alive) p.hp = Math.min(p.maxHp, p.hp + p.stats.lifesteal);
   if (w.rng.chance(def.drop * w.diff.dropMul)) spawnPickup(w, 0, x, y, 12);
-  if (t === ET.Overseer) for (let k = 0; k < w.lanes.count; k++) w.lanes.frozen[k] = 3; // a deliberate gift
+  if (t === ET.Overseer) {
+    for (let k = 0; k < w.lanes.count; k++) w.lanes.frozen[k] = 3; // a deliberate gift
+    // tethers snap: its mites are dazed
+    for (let k = 0; k < E.hi; k++) {
+      if (!E.alive[k] || E.type[k] !== ET.GearMite || E.st[k] === AS.Spawning) continue;
+      const dx = E.x[k]! - x;
+      const dy = E.y[k]! - y;
+      if (dx * dx + dy * dy > 12 * 12) continue;
+      E.st[k] = AS.Stunned;
+      E.stT[k] = -0.3; // gearMite leaves Stunned at stT ≥ 1.2 → 1.5 s dazed
+      E.haste[k] = 0;
+      E.charge[k] = 0;
+    }
+    w.events.push(Ev.TetherSnap, x, y);
+  }
   if (t === ET.Press) for (let k = 0; k < w.lanes.count; k++) w.lanes.frozen[k] = 5;
   if (t === ET.Arm) {
     w.events.push(Ev.ArmDown, x, y);

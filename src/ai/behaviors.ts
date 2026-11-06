@@ -210,7 +210,7 @@ export function updateEnemies(w: World): void {
 
 function speedOf(w: World, i: number): number {
   const E = w.enemies;
-  return enemyDef(E.type[i]!).speed * E.speedMul[i]! * w.phys.enemySpeed * (E.buff[i]! > 0 ? 1.3 : 1) * (E.haste[i]! > 0 ? 1.1 : 1);
+  return enemyDef(E.type[i]!).speed * E.speedMul[i]! * w.phys.enemySpeed * (E.buff[i]! > 0 ? 1.3 : 1) * (E.haste[i]! > 0 ? OVERSEER.haste : 1);
 }
 
 function contact(w: World, i: number): void {
@@ -1291,7 +1291,7 @@ function gearMite(w: World, i: number): void {
       integrate(w, i, 0, 0);
       if (E.stT[i]! >= tel(w, 0.6)) {
         E.aim[i] = E.face[i]!;
-        const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+        const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? OVERSEER.haste : 1);
         E.vx[i] = dcos(E.aim[i]!) * v;
         E.vy[i] = dsin(E.aim[i]!) * v;
         E.burst[i] = 0;
@@ -1301,7 +1301,7 @@ function gearMite(w: World, i: number): void {
       return;
     }
     case AS.Dash: {
-      const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? 1.1 : 1);
+      const v = 13 * w.phys.enemySpeed * (E.haste[i]! > 0 ? OVERSEER.haste : 1);
       if (bounceMove(w, i, v)) E.burst[i] = E.burst[i]! + 1;
       if (E.burst[i]! >= 3 || E.stT[i]! >= 2.5) {
         E.charge[i] = 0;
@@ -1362,7 +1362,8 @@ function stamper(w: World, i: number): void {
           }
           mx = clampX(mx);
           my = clampY(my);
-          w.marks.add(mx, my, 1.5, MARK - at, 0.4, 35, ET.Stamper);
+          const m = w.marks.add(mx, my, 1.5, MARK - at, 0.4, 35, ET.Stamper);
+          if (m >= 0) w.marks.own[m] = i;
         }
       }
       if (E.stT[i]! >= MARK) setState(w, i, AS.Attack);
@@ -1601,21 +1602,37 @@ function skiff(w: World, i: number): void {
   if (E.burst[i]! >= 4 || E.stT[i]! > 6) setState(w, i, AS.Stunned);
 }
 
-// ───────────────────────────── Overseer: patrol far → pulse (reverse nearby lanes) → tighten mites
+// ───────────────────────────── Overseer: the line's foreman. Visible command over the mites around it.
+//   Move:   keeps 10–15 u, orbits; every tick it COMMANDS every mite within R (amber tethers in the
+//           render): commanded mites roll +30% faster. Too close → orders a press mark onto you.
+//   Windup: 0.8 s — the order «РАЗВОРОТ» charges (a ring grows to R).
+//   Attack: the pulse runs out over the floor; belts inside R flip after a 1 s warning.
+//   Guard:  at 60% HP its ring drops and the core is open for 2 s (+50% damage) — once.
+//   Death:  tethers snap, its mites are dazed 1.5 s and the belts freeze for 3 s.
+export const OVERSEER = { radius: 12, haste: 1.3, pulseEvery: 6, exposed: 2, guardMark: 7, markCd: 3.5 } as const;
 function overseer(w: World, i: number): void {
   const E = w.enemies;
   const p = w.player;
   const d = distToPlayer(w, i);
+  // command: every mite in range is tethered (refreshed each tick, lapses quickly when it leaves)
+  const R2 = OVERSEER.radius * OVERSEER.radius;
+  for (let k = 0; k < E.hi; k++) {
+    if (!E.alive[k] || E.type[k] !== ET.GearMite || E.st[k] === AS.Spawning) continue;
+    const dx = E.x[k]! - E.x[i]!;
+    const dy = E.y[k]! - E.y[i]!;
+    if (dx * dx + dy * dy < R2) E.haste[k] = Math.max(E.haste[k]!, 0.25);
+  }
   // exposed once after losing 40% HP
   if (E.st[i] !== AS.Guard && E.aux2[i] !== 77 && E.dmgTaken[i]! >= E.maxHp[i]! * 0.4) {
     E.aux2[i] = 77;
     E.charge[i] = 0;
+    w.events.push(Ev.HubShield, E.x[i]!, E.y[i]!, 0); // ring drops: open core
     setState(w, i, AS.Guard);
   }
   switch (E.st[i]) {
     case AS.Guard:
       integrate(w, i, 0, 0);
-      if (E.stT[i]! >= 2) setState(w, i, AS.Move);
+      if (E.stT[i]! >= OVERSEER.exposed) setState(w, i, AS.Move);
       return;
     case AS.Windup: {
       E.charge[i] = Math.min(1, E.stT[i]! / 0.8);
@@ -1623,10 +1640,13 @@ function overseer(w: World, i: number): void {
       if (E.stT[i]! >= 0.8) {
         const L = w.lanes;
         const period = w.phys.lanePeriod;
+        w.events.push(Ev.Order, E.x[i]!, E.y[i]!, OVERSEER.radius);
         for (let k = 0; k < L.count; k++) {
           const dx = L.cx[k]! - E.x[i]!;
           const dy = L.cy[k]! - E.y[i]!;
-          if (dx * dx + dy * dy > 12 * 12 || L.frozen[k]! > 0) continue;
+          // a belt counts if any part of it is inside the ring
+          const reach = OVERSEER.radius + Math.max(L.hw[k]!, L.hh[k]!);
+          if (dx * dx + dy * dy > reach * reach || L.frozen[k]! > 0) continue;
           if (L.t[k]! < period - 1.0) L.t[k] = period - 1.0; // shortened warning
           w.events.push(Ev.LaneWarn, k);
         }
@@ -1636,17 +1656,8 @@ function overseer(w: World, i: number): void {
       return;
     }
     case AS.Attack:
-      // tighten: nearby mites spin faster for 4 s
       integrate(w, i, 0, 0);
-      if (E.stT[i]! < DT * 1.5) {
-        for (let k = 0; k < E.hi; k++) {
-          if (!E.alive[k] || E.type[k] !== ET.GearMite) continue;
-          const dx = E.x[k]! - E.x[i]!;
-          const dy = E.y[k]! - E.y[i]!;
-          if (dx * dx + dy * dy < 64) E.haste[k] = 4;
-        }
-      }
-      if (E.stT[i]! >= 1) {
+      if (E.stT[i]! >= 0.6) {
         E.aux[i] = 0;
         setState(w, i, AS.Move);
       }
@@ -1658,16 +1669,17 @@ function overseer(w: World, i: number): void {
       const radial = d < 10 ? -1 : d > 15 ? 0.6 : 0;
       integrate(w, i, (rx * radial - ry * E.aux2[i]! * 0.5) * sp, (ry * radial + rx * E.aux2[i]! * 0.5) * sp);
       faceToward(w, i, angleToPlayer(w, i), 2);
-      // too close: call the line's press down on the intruder (a telegraphed square mark)
-      if (d < 7 && E.cd[i]! <= 0 && p.alive) {
+      // too close: orders the line's press onto the intruder (a beam shows where)
+      if (d < OVERSEER.guardMark && E.cd[i]! <= 0 && p.alive) {
         const mx = clampX(p.x + p.vx * 0.5);
         const my = clampY(p.y + p.vy * 0.5);
-        w.marks.add(mx, my, 1.4, tel(w, 1.1), 0.3, 25, ET.Overseer, true);
+        const m = w.marks.add(mx, my, 1.4, tel(w, 1.1), 0.3, 25, ET.Overseer, true);
+        if (m >= 0) w.marks.own[m] = i;
         w.events.push(Ev.PadWarn, mx, my);
-        E.cd[i] = 3.5 * cdMul(w);
+        E.cd[i] = OVERSEER.markCd * cdMul(w);
       }
       E.aux[i] = E.aux[i]! + DT;
-      if (E.aux[i]! >= 6 * cdMul(w)) setState(w, i, AS.Windup);
+      if (E.aux[i]! >= OVERSEER.pulseEvery * cdMul(w)) setState(w, i, AS.Windup);
     }
   }
 }

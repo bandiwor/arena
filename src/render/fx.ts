@@ -900,6 +900,19 @@ export class FxDirector {
           this.burst(10, x, 0.8, y, 0, TAU, 3, 8, 3, 0.4, C_PLAYER, 2, 0.08, 3, 6, PS.Spark, 0);
           this.sfx('shield_block', x, y, 0.5, 1.3, 0.05);
           break;
+        case Ev.Order:
+          // «РАЗВОРОТ»: the command pulse runs out over the floor to the belts it reaches
+          this.timed(QK.Ring, QM.Ground, x, 0.08, y, 0, a * 2, a * 2, C_AMBER, 2.4, 0.6);
+          this.timed(QK.Ring, QM.Ground, x, 0.08, y, 0, a * 1.4, a * 1.4, C_AMBER, 1.6, 0.45);
+          this.timed(QK.Flash, QM.Billboard, x, 3, y, 0, 3, 3, C_AMBER, 2, 0.15);
+          this.d.floor.ripple(x, y, 0.9);
+          this.sfx('pylon_charge', x, y, 0.6, 0.7, 0.2, 2);
+          break;
+        case Ev.TetherSnap:
+          this.burst(30, x, 2.5, y, 0, TAU, 3, 10, 4, 0.5, C_AMBER, 2.5, 0.08, 3, 14, PS.Spark, 0);
+          this.timed(QK.Ring, QM.Ground, x, 0.08, y, 0, 24, 24, C_AMBER, 1.4, 0.4);
+          this.sfx('shorted', x, y, 0.8, 0.8, 0.1);
+          break;
         case Ev.Spray: {
           // a hit Гнойник squirts pus jets around itself
           const n = b | 0;
@@ -1362,7 +1375,7 @@ export class FxDirector {
       }
     }
 
-    if (w.act === 2) this.foundryFrame(w, dt, time);
+    this.foundryFrame(w, dt, time); // marks, tracks and shunts can appear in any sector (debug spawns)
     // boss lasers
     const LS = w.lasers;
     for (let k = 0; k < MAX_LASERS; k++) {
@@ -1465,9 +1478,23 @@ export class FxDirector {
       const R = M.r[i]!;
       const k = hot ? 1.2 : 1.6 + pr * 1.2;
       const c = hot ? K_WHITE : C_AMBER;
-      if (M.square[i]) Qb.push(QK.Plate, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * k, c[1]! * k, c[2]! * k, 0, pr, i);
-      else Qb.push(QK.TeleCircle, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * k, c[1]! * k, c[2]! * k, 0, Math.min(1, pr), i);
-      if (!hot && pr > 0.7) L.add(M.x[i]!, M.y[i]!, 0.3, R * 2 + 2, 2 * pr, 0.8 * pr, 0.1);
+      // the last 30% blinks faster and faster: "it's about to land"
+      const blink = !hot && pr > 0.7 ? 0.65 + 0.35 * Math.sign(Math.sin(time * (18 + pr * 30))) : 1;
+      const kk = k * blink;
+      if (M.square[i]) Qb.push(QK.Plate, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * kk, c[1]! * kk, c[2]! * kk, 0, pr, i);
+      else Qb.push(QK.TeleCircle, QM.Ground, M.x[i]!, 0.07, M.y[i]!, 0, R * 2, R * 2, c[0]! * kk, c[1]! * kk, c[2]! * kk, 0, Math.min(1, pr), i);
+      if (!hot) L.add(M.x[i]!, M.y[i]!, 0.3, R * 2 + 1.5, 1.5 * pr + 0.3, 0.6 * pr + 0.1, 0.05);
+      // aim beam from whoever placed it (Штамповщик, Надзиратель) while it fills
+      const o = M.own[i]!;
+      const E = w.enemies;
+      if (!hot && o >= 0 && E.alive[o]) {
+        const ox = E.x[o]!;
+        const oy = E.y[o]!;
+        const dx = M.x[i]! - ox;
+        const dy = M.y[i]! - oy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0.5) Qb.push(QK.Needle, QM.Ground, (ox + M.x[i]!) / 2, 0.09, (oy + M.y[i]!) / 2, Math.atan2(dy, dx), len, 0.22, C_AMBER[0]! * 0.45 * pr, C_AMBER[1]! * 0.45 * pr, C_AMBER[2]! * 0.45 * pr, 0, 0, i);
+      }
     }
     // saw tracks: dim while arming, then a hot orange score that cools off
     const T = w.tracks;
@@ -1506,7 +1533,7 @@ export class FxDirector {
     }
     // coolant pools: a cold violet glow pools on the steel; fresh flood pools spray as they spread
     const PO = w.pools;
-    for (let k = 0; k < PO.count; k++) {
+    for (let k = 0; k < (w.act === 2 ? PO.count : 0); k++) {
       if (k < 6) L.add(PO.x[k]!, PO.y[k]!, 0.2, PO.r[k]! * 1.6, 0.25, 0.1, 0.8);
       if (PO.life[k]! > 0 && r.chance(0.08)) {
         const pa = r.float() * TAU;
@@ -1544,6 +1571,11 @@ export class FxDirector {
     }
     switch (type) {
       case ET.GearMite:
+        if (E.haste[i]! > 0) {
+          // under an Overseer's command: amber glow, sparks off the teeth
+          L.add(x, y, 0.4, 2.2, 2.2, 0.9, 0.08);
+          if (r.chance(0.25)) P.emit(x, 0.3, y, r.sym() * 3, r.range(1, 3), r.sym() * 3, 0.2, C_AMBER[0]!, C_AMBER[1]!, C_AMBER[2]!, 0.05, 2, 12, PS.Spark, 0);
+        }
         if (entered && st === AS.Windup) this.sfx('mite_spin', x, y, 0.35, 0.9 + r.float() * 0.3, 0.05, 4);
         if (st === AS.Windup) {
           const a = E.face[i]!;
@@ -1554,8 +1586,16 @@ export class FxDirector {
         }
         break;
       case ET.Stamper:
-        if (entered && st === AS.Windup) this.sfx('stamp_whine', x, y, 0.4, 1.2, 0.1, 3);
-        if (st === AS.Windup) L.add(x, y, 1.6, 3 + ch * 4, 2.5 * ch, 1 * ch, 0.1);
+        if (entered && st === AS.Windup) this.sfx('stamp_whine', x, y, 0.55, 1.2, 0.1, 3);
+        if (st === AS.Windup) {
+          // hydraulics building pressure: amber glow, steam from the joints, a ring tightening on the body
+          L.add(x, y, 1.6, 3 + ch * 5, 3 * ch + 0.4, 1.2 * ch, 0.1);
+          Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 3.2, 3.2, C_AMBER[0]! * (0.8 + ch), C_AMBER[1]! * (0.8 + ch), C_AMBER[2]! * (0.8 + ch), 0, ch, i);
+          if (r.chance(0.35 + ch * 0.4)) P.emit(x + r.sym() * 0.5, 1.4, y + r.sym() * 0.5, r.sym(), r.range(1, 2.5), r.sym(), 0.8, C_STEAM[0]!, C_STEAM[1]!, C_STEAM[2]!, 0.35, 1.2, -0.4, PS.Smoke, 0.5);
+        } else if (st === AS.Attack && entered) {
+          this.timed(QK.Ring, QM.Ground, x, 0.06, y, 0, 3.6, 3.6, C_AMBER, 2, 0.3);
+          this.d.juice.addTrauma(0.1 * this.near(x, y));
+        }
         break;
       case ET.ArcDrone: {
         L.add(x, y, 1.2, 3, C_ARC[0]! * 0.8, C_ARC[1]! * 0.8, C_ARC[2]! * 0.8);
@@ -1612,15 +1652,32 @@ export class FxDirector {
         break;
       case ET.Overseer: {
         const top = 2.9;
+        const R = 12;
         L.add(x, y, top, 4 + ch * 6, 2.2 + ch * 3, 1 + ch, 0.15);
+        // command tethers: an amber cable to every mite under its control
+        const E2 = w.enemies;
+        for (let k = 0; k < E2.hi; k++) {
+          if (!E2.alive[k] || E2.type[k] !== ET.GearMite || E2.st[k] === AS.Spawning) continue;
+          const dx = E2.x[k]! - x;
+          const dy = E2.y[k]! - y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > R * R) continue;
+          const len = Math.sqrt(d2);
+          const pulse = 0.55 + 0.45 * Math.sin(time * 9 - len * 0.8);
+          Qb.push(QK.Needle, QM.Ground, x + dx / 2, 0.1, y + dy / 2, Math.atan2(dy, dx), len, 0.18, C_AMBER[0]! * 0.8 * pulse, C_AMBER[1]! * 0.8 * pulse, C_AMBER[2]! * 0.8 * pulse, 0, 0, k);
+          // signal packets travel down the cable to the mite
+          const tt = (time * 1.6 + k * 0.31) % 1;
+          Qb.push(QK.Orb, QM.Ground, x + dx * tt, 0.12, y + dy * tt, 0, 0.35, 0.35, C_AMBER[0]! * 1.6, C_AMBER[1]! * 1.6, C_AMBER[2]! * 1.6, 0, 0, k);
+        }
         if (st === AS.Windup) {
-          Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, 24, 24, C_AMBER[0]! * 0.9, C_AMBER[1]! * 0.9, C_AMBER[2]! * 0.9, 0, ch, i);
+          // the order charges: a ring grows out to the command radius
+          Qb.push(QK.TeleCircle, QM.Ground, x, 0.07, y, 0, R * 2 * (0.25 + ch * 0.75), R * 2 * (0.25 + ch * 0.75), C_AMBER[0]! * 1.2, C_AMBER[1]! * 1.2, C_AMBER[2]! * 1.2, 0, ch, i);
           if (entered) this.sfx('lane_warn', x, y, 0.5, 1.3, 0.2, 2);
-        } else if (st === AS.Attack && entered) {
-          this.timed(QK.Ring, QM.Ground, x, 0.07, y, 0, 16, 16, C_AMBER, 2, 0.5);
-          this.sfx('pylon_charge', x, y, 0.5, 0.8, 0.2, 2);
-        } else if (st === AS.Guard && r.chance(0.5)) {
-          P.emit(x + r.sym() * 0.4, r.range(0.8, top), y + r.sym() * 0.4, r.sym() * 3, r.range(0, 3), r.sym() * 3, 0.25, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.07, 2, 12, PS.Spark, 0);
+        } else if (st === AS.Guard) {
+          // ring dropped, core open: bright magenta core light + sparks
+          L.add(x, y, 1.6, 6, 6, 0.5, 2.2);
+          if (r.chance(0.6)) P.emit(x + r.sym() * 0.4, r.range(0.8, top), y + r.sym() * 0.4, r.sym() * 3, r.range(0, 3), r.sym() * 3, 0.25, C_SPARK[0]!, C_SPARK[1]!, C_SPARK[2]!, 0.07, 2, 12, PS.Spark, 0);
+          Qb.push(QK.Ring, QM.Ground, x, 0.08, y, 0, 3.4, 3.4, C_ENEMY[0]! * 1.6, C_ENEMY[1]! * 1.6, C_ENEMY[2]! * 1.6, 0, (time * 2) % 1, i);
         }
         break;
       }

@@ -320,6 +320,12 @@ export class EntityRenderer {
           if (ch > 0) pitch = -0.55 * ch;
           else pitch = 0.5 * Math.max(0, 1 - (stT - 0.35) / 0.16);
         }
+      } else if (t === ET.Stamper) {
+        // the hammer lifts while pressure builds (body rears back), then slams
+        if (st === AS.Windup) {
+          pitch = -0.22 * ch + Math.sin(time * 40) * 0.015 * ch; // shudders near the end
+          h = 0.05 * ch;
+        } else if (st === AS.Attack) pitch = 0.3 * Math.max(0, 1 - stT / 0.15);
       } else if (t === ET.ArcDrone) {
         h = 0.15 + Math.sin(time * 3 + E.seed[k]! * 9) * 0.12;
       } else if (t === ET.Parasite) {

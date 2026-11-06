@@ -84,3 +84,62 @@ describe('Bestiary · reworked behaviours', () => {
     expect(s.world.enemies.type[host]).toBe(ET.Charger);
   });
 });
+
+describe('Линия 9 · review fixes', () => {
+  it('belts push hard enough to feel (≥4 u/s) and are long', () => {
+    const s = foundry();
+    const w = s.world;
+    const L = w.lanes;
+    expect(L.hw[0]! * 2).toBeGreaterThanOrEqual(15);
+    s.player({ x: L.cx[0]! - 5, y: L.cy[0]! });
+    const x0 = w.player.x;
+    s.run(60);
+    expect(w.player.x - x0).toBeGreaterThan(4);
+  });
+
+  it('overseer commands nearby mites (+30% speed), orders a pulse, opens up, and its death dazes them', async () => {
+    const { OVERSEER } = await import('../src/ai/behaviors');
+    const { killEnemy, damageEnemy } = await import('../src/sim/systems/entities');
+    const s = foundry().player({ x: 0, y: 14, god: true }).spawn('overseer', -18, -3).spawn('mite', -16, -3).spawn('mite', 10, 10);
+    const orders: number[][] = [];
+    let commandedNear = false;
+    let commandedFar = false;
+    s.run(60 * 8, (w) => {
+      events(w, Ev.Order, orders);
+      const E = w.enemies;
+      for (const k of [1, 2]) {
+        if (!E.alive[k] || E.st[k] === AS.Spawning) continue;
+        const d = Math.hypot(E.x[k]! - E.x[0]!, E.y[k]! - E.y[0]!);
+        if (d < OVERSEER.radius - 1 && E.haste[k]! > 0) commandedNear = true;
+        if (d > OVERSEER.radius + 1 && E.haste[k]! > 0.26) commandedFar = true; // only lapses after leaving
+      }
+    });
+    const w = s.world;
+    expect(commandedNear).toBe(true);
+    expect(commandedFar).toBe(false);
+    expect(orders.length).toBeGreaterThan(0);
+    // 40% damage → exposed (+50% damage)
+    damageEnemy(w, 0, w.enemies.maxHp[0]! * 0.41, 0, 0, 0, 0, false);
+    s.run(2);
+    expect(w.enemies.st[0]).toBe(AS.Guard);
+    const hp = w.enemies.hp[0]!;
+    damageEnemy(w, 0, 10, 0, 0, 0, 0, false);
+    expect(hp - w.enemies.hp[0]!).toBeCloseTo(15, 3);
+    // death: tethers snap
+    expect(OVERSEER.haste).toBeGreaterThan(1.2);
+    // put a mite next to it, then kill it
+    w.enemies.x[1] = w.enemies.x[0]! + 3;
+    w.enemies.y[1] = w.enemies.y[0]!;
+    killEnemy(w, 0, 0, 0, 0, 0);
+    expect(w.enemies.st[1]).toBe(AS.Stunned);
+  });
+
+  it('stamper marks remember who placed them (for the aim beam)', () => {
+    const s = foundry().player({ x: 0, y: 6, god: true }).spawn('stamper', 0, -4);
+    let owned = false;
+    s.run(60 * 4, (w) => {
+      for (let k = 0; k < MAX_MARKS; k++) if (w.marks.alive[k] && w.marks.src[k] === ET.Stamper && w.marks.own[k] === 0) owned = true;
+    });
+    expect(owned).toBe(true);
+  });
+});
