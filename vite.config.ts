@@ -90,6 +90,8 @@ export default defineConfig(({ command }) => ({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // sim-heavy tests (whole waves at 60 Hz) take 1–3 s locally, several × that on CI runners
+    testTimeout: 30_000,
     pool: 'forks',
     execArgv: ['--expose-gc'],
   },
