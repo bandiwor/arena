@@ -1,5 +1,8 @@
 /* NULL//TRAIN page */
-html:has(body.train-page), body.train-page { height: auto; overflow: auto; }
+/* the page itself scrolls: body must not be a (dead) scroll container, or overscroll-behavior: none
+   on it swallows every wheel / swipe */
+html:has(body.train-page) { height: auto; overflow: auto; }
+body.train-page { height: auto; overflow: visible; }
 body.train-page { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
 .tr-head { display: flex; justify-content: space-between; align-items: flex-end; padding: 22px 26px 6px; gap: 16px; }
 .tr-head .title { font-size: clamp(36px, 5vw, 64px); }

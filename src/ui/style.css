@@ -507,7 +507,8 @@ body:not(.coarse) .help .tc { display: none; }
 }
 
 /* ═════════════ UI kit showcase page (/kit.html) */
-html:has(body.kit-page), body.kit-page { height: auto; overflow: auto; }
+html:has(body.kit-page) { height: auto; overflow: auto; }
+body.kit-page { height: auto; overflow: visible; }
 body.kit-page { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
 .kit-head { padding: 28px 28px 0; }
 .kit-head .title { font-size: clamp(40px, 6vw, 72px); }
