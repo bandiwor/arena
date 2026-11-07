@@ -1,5 +1,4 @@
-import '../ui/style.css';
-import './lab.css';
+import { signal } from '@preact/signals';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AudioEngine } from '../audio/audio';
 import { SFX, type SfxId } from '../audio/sfx';
@@ -15,8 +14,10 @@ import { setMutator } from '../sim/systems/waves';
 import { World } from '../sim/world';
 
 /**
- * NULL//ARENA Lab — inspect & tweak every procedural asset with the real render pipeline.
- * Programmatic API on window.lab (used for screenshots/automation).
+ * NULL//ARENA Lab engine — inspect & tweak every procedural asset with the real render pipeline.
+ * Created once on the first visit of #/lab (its own canvas + renderer), then only paused while
+ * other pages are open. The UI (./page.tsx) reads the signals below; window.lab is the
+ * programmatic API (screenshots / automation).
  */
 const LS = 'null-arena:model-overrides';
 try {
@@ -25,8 +26,8 @@ try {
   /* ignore */
 }
 
-const canvas = document.getElementById('game') as HTMLCanvasElement;
-const root = document.getElementById('lab-ui') as HTMLElement;
+export const canvas = document.createElement('canvas');
+canvas.className = 'lab-canvas';
 const audio = new AudioEngine();
 const R = new GameRenderer(canvas, audio);
 R.camera.manual = true;
@@ -42,6 +43,19 @@ world.god = true;
 type Anim = { state: number; charge: number; walk: number; speed: number; flash: number; elite: boolean; spin: boolean; loopFx: string };
 const anim: Anim = { state: AS.Move, charge: 0, walk: 0, speed: 0, flash: 0, elite: false, spin: true, loopFx: '' };
 let current: ModelDef = modelByKey('archer');
+/** UI state */
+export const ui = {
+  model: signal('archer'),
+  state: signal<number>(AS.Move),
+  loopFx: signal(''),
+  elite: signal(false),
+  spin: signal(true),
+  spawnLoop: signal(false),
+  postOn: signal(true),
+  info: signal(''),
+  /** bumps when the model's params were rebuilt / reset */
+  paramsRev: signal(0),
+};
 let enemyId = -1;
 let fxTimer = 0;
 let spawnLoop = false;
@@ -105,7 +119,8 @@ function showModel(key: string): void {
   controls.target.set(0, h * 0.5, 0);
   const d = Math.max(3.2, h * 2.2);
   cam.position.set(d * 0.8, h * 0.9 + d * 0.35, d);
-  buildParams();
+  ui.model.value = key;
+  ui.paramsRev.value++;
   info();
 }
 
@@ -204,56 +219,16 @@ function decalSheet(): void {
   controls.target.set(0, 0, 0);
 }
 
-function runFx(name: string): void {
+export function runFx(name: string): void {
   const f = FX[name];
   if (!f) throw new Error(`fx: ${Object.keys(FX).join(', ')}`);
   f();
   info(`fx: ${name}`);
 }
 
-// ───────────── UI
-const left = document.createElement('div');
-left.className = 'lab-side';
-const right = document.createElement('div');
-right.className = 'lab-side right';
-root.append(left, right);
-
-function btns(title: string, items: string[], onClick: (k: string) => void, isOn?: (k: string) => boolean): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `<h2>${title}</h2>`;
-  const b = document.createElement('div');
-  b.className = 'lab-btns';
-  for (const k of items) {
-    const e = document.createElement('button');
-    e.textContent = k;
-    if (isOn?.(k)) e.classList.add('on');
-    e.onclick = () => {
-      void audio.init(7).then(() => audio.resume());
-      onClick(k);
-      if (isOn) b.querySelectorAll('button').forEach((x) => x.classList.toggle('on', isOn(x.textContent ?? '')));
-    };
-    b.appendChild(e);
-  }
-  wrap.appendChild(b);
-  return wrap;
-}
-
-function slider(parent: HTMLElement, label: string, min: number, max: number, step: number, value: number, on: (v: number) => void): void {
-  const row = document.createElement('label');
-  row.className = 'lab-param';
-  row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${value}"><output>${value}</output>`;
-  const inp = row.querySelector('input')!;
-  const out = row.querySelector('output')!;
-  inp.oninput = () => {
-    const v = parseFloat(inp.value);
-    out.textContent = String(v);
-    on(v);
-  };
-  parent.appendChild(row);
-}
-
+// ───────────── controls (called by the UI)
 // the charge slider scrubs through timed states (stT = charge × 1.2 s)
-const STATES: Record<string, number> = {
+export const STATES: Record<string, number> = {
   idle: AS.Move,
   windup: AS.Windup,
   attack: AS.Attack,
@@ -268,17 +243,16 @@ const STATES: Record<string, number> = {
   sated: AS.Guard,
   spawn: AS.Spawning,
 };
-left.innerHTML = '<h1>NULL<span>//</span>LAB</h1><div class="lab-info">процедурные ассеты · тот же рендер, что в игре</div><div class="lab-btns" style="margin-top:8px"><a href="./" style="color:var(--cyan);font:700 12px var(--mono);text-decoration:none">← в игру</a></div>';
-left.appendChild(btns('Модели', MODELS.map((m) => m.key), showModel, (k) => k === current.key));
-left.appendChild(btns('Состояние', Object.keys(STATES), (k) => {
+export function setState(k: string): void {
   anim.state = STATES[k]!;
+  ui.state.value = anim.state;
   if (k === 'spawn' && enemyId >= 0) world.enemies.spawnT[enemyId] = enemyDef(world.enemies.type[enemyId]!).spawnTime;
-}, (k) => STATES[k] === anim.state));
-left.appendChild(btns('Действия', ['hit-flash', 'death', 'elite', 'turntable', 'respawn-loop'], (k) => {
+}
+export function action(k: string): void {
   if (k === 'hit-flash') anim.flash = 1;
-  if (k === 'elite') anim.elite = !anim.elite;
-  if (k === 'turntable') anim.spin = !anim.spin;
-  if (k === 'respawn-loop') spawnLoop = !spawnLoop;
+  if (k === 'elite') ui.elite.value = anim.elite = !anim.elite;
+  if (k === 'turntable') ui.spin.value = anim.spin = !anim.spin;
+  if (k === 'respawn-loop') ui.spawnLoop.value = spawnLoop = !spawnLoop;
   if (k === 'death' && enemyId >= 0) {
     const t = world.enemies.type[enemyId]!;
     const d = enemyDef(t);
@@ -286,58 +260,40 @@ left.appendChild(btns('Действия', ['hit-flash', 'death', 'elite', 'turnt
     world.enemies.alive[enemyId] = 0;
     setTimeout(() => showModel(current.key), 1300);
   }
-}));
-const animBox = document.createElement('div');
-animBox.innerHTML = '<h2>Анимация</h2>';
-slider(animBox, 'charge', 0, 1, 0.01, 0, (v) => (anim.charge = v));
-slider(animBox, 'walk speed', 0, 1, 0.01, 0, (v) => (anim.speed = v));
-left.appendChild(animBox);
-left.appendChild(btns('Камера', ['iso', 'game', 'top', 'front', 'close'], (k) => camPreset(k)));
-left.appendChild(btns('FX', Object.keys(FX), runFx));
-left.appendChild(btns('FX loop', ['off', ...Object.keys(FX).filter((k) => !k.startsWith('decal'))], (k) => (anim.loopFx = k === 'off' ? '' : k), (k) => (k === 'off' ? !anim.loopFx : anim.loopFx === k)));
-left.appendChild(btns('Звуки', [...SFX], (k) => audio.playUi(k as SfxId)));
-left.appendChild(btns('Мутатор (пол)', ['none', ...MUTATORS.map((m) => m.key)], (k) => {
+}
+export function setLoopFx(k: string): void {
+  ui.loopFx.value = anim.loopFx = k === 'off' ? '' : k;
+}
+export function setMutatorKey(k: string): void {
   for (const m of MUTATORS) setMutator(world, m.id, m.key === k);
-}));
-
-const paramsBox = document.createElement('div');
-const postBox = document.createElement('div');
-const infoBox = document.createElement('div');
-infoBox.className = 'lab-info';
-right.append(paramsBox, postBox, infoBox);
-
-function buildParams(): void {
-  paramsBox.innerHTML = `<h2>Параметры: ${current.name}</h2>`;
-  const p = paramsFor(current);
-  for (const [k, spec] of Object.entries(current.params)) {
-    slider(paramsBox, k, spec.min, spec.max, spec.step, p[k] ?? spec.value, (v) => {
-      modelOverrides[current.key] = { ...(modelOverrides[current.key] ?? {}), [k]: v };
-      meshFor(current).rebuild();
-      persist();
-      info();
-    });
-  }
-  const row = document.createElement('div');
-  row.className = 'lab-btns';
-  row.style.marginTop = '8px';
-  const copy = document.createElement('button');
-  copy.textContent = 'copy params JSON';
-  copy.onclick = () => {
-    const s = JSON.stringify(paramsFor(current));
-    void navigator.clipboard?.writeText(s);
-    console.log(current.key, s);
-    info('скопировано: ' + s);
-  };
-  const reset = document.createElement('button');
-  reset.textContent = 'reset';
-  reset.onclick = () => {
-    delete modelOverrides[current.key];
-    persist();
-    meshFor(current).rebuild();
-    buildParams();
-  };
-  row.append(copy, reset);
-  paramsBox.appendChild(row);
+}
+export function playSound(k: string): void {
+  audio.playUi(k as SfxId);
+}
+/** first click in the lab unlocks audio */
+export function unlockAudio(): void {
+  void audio.init(7).then(() => audio.resume());
+}
+export function setAnim(k: 'charge' | 'speed', v: number): void {
+  anim[k] = v;
+}
+export const currentModel = (): ModelDef => current;
+export function setParam(k: string, v: number): void {
+  modelOverrides[current.key] = { ...(modelOverrides[current.key] ?? {}), [k]: v };
+  meshFor(current).rebuild();
+  persist();
+  info();
+}
+export function copyParams(): void {
+  const s = JSON.stringify(paramsFor(current));
+  void navigator.clipboard?.writeText(s);
+  info('скопировано: ' + s);
+}
+export function resetParams(): void {
+  delete modelOverrides[current.key];
+  persist();
+  meshFor(current).rebuild();
+  ui.paramsRev.value++;
 }
 function persist(): void {
   try {
@@ -346,31 +302,33 @@ function persist(): void {
     /* ignore */
   }
 }
-
-postBox.innerHTML = '<h2>Пост-обработка</h2>';
-const S = R.post.settings;
-slider(postBox, 'bloom', 0, 3, 0.05, S.bloom, (v) => (S.bloom = v));
-slider(postBox, 'threshold', 0, 3, 0.05, S.threshold, (v) => (S.threshold = v));
-slider(postBox, 'exposure', 0.2, 3, 0.05, S.exposure, (v) => (S.exposure = v));
-slider(postBox, 'scanlines', 0, 0.2, 0.005, S.scan, (v) => (S.scan = v));
-slider(postBox, 'grain', 0, 0.15, 0.005, S.grain, (v) => (S.grain = v));
-slider(postBox, 'vignette', 0, 1.5, 0.05, S.vignette, (v) => (S.vignette = v));
-slider(postBox, 'glitch', 0, 1.5, 0.05, 0, (v) => (R.juice.glitchBase = v));
-slider(postBox, 'corruption', 0, 1, 0.05, 0, (v) => (world.boss.corruption = v));
-postBox.appendChild(btns('', ['post on/off', 'shake', 'chroma', 'flash'], (k) => {
-  if (k === 'post on/off') S.enabled = !S.enabled;
+export const post = (): typeof R.post.settings => R.post.settings;
+export function setPost(k: 'bloom' | 'threshold' | 'exposure' | 'scan' | 'grain' | 'vignette', v: number): void {
+  R.post.settings[k] = v;
+}
+export function setGlitch(v: number): void {
+  R.juice.glitchBase = v;
+}
+export function setCorruption(v: number): void {
+  world.boss.corruption = v;
+}
+export function postAction(k: string): void {
+  const S = R.post.settings;
+  if (k === 'post on/off') ui.postOn.value = S.enabled = !S.enabled;
   if (k === 'shake') R.juice.addTrauma(0.6);
   if (k === 'chroma') R.juice.addChroma(1.5);
   if (k === 'flash') R.juice.doFlash(0.6);
-}));
+}
+export const FX_KEYS = (): string[] => Object.keys(FX);
+export { MODELS, SFX, MUTATORS };
 
 function info(extra = ''): void {
   const geo = meshFor(current).mesh.geometry;
   const tris = (geo.getAttribute('position')?.count ?? 0) / 3;
-  infoBox.innerHTML = `<h2>Инфо</h2><b>${current.name}</b>\nтреугольников: ${tris}\nвысота: ${current.height}\n${extra}`;
+  ui.info.value = `треугольников: ${tris}\nвысота: ${current.height}${extra ? '\n' + extra : ''}`;
 }
 
-function camPreset(k: string): void {
+export function camPreset(k: string): void {
   const h = current.height;
   const t = controls.target;
   t.set(0, h * 0.5, 0);
@@ -403,14 +361,24 @@ function frame(now: number): void {
     R.fx.spawnFx(0, 0, world.enemies.type[enemyId]!, false);
   }
   R.render(world, 1, dt, dt * R.juice.simScale);
-  requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame);
 }
+let raf = 0;
 window.addEventListener('resize', () => R.resize());
 showModel('archer');
-requestAnimationFrame(frame);
+/** the page is shown: (re)start the loop on the page's canvas size */
+export function start(): void {
+  cancelAnimationFrame(raf);
+  last = performance.now();
+  R.resize();
+  raf = requestAnimationFrame(frame);
+}
+export function stop(): void {
+  cancelAnimationFrame(raf);
+}
 
 /** Automation API */
-const api = {
+export const api = {
   models: () => MODELS.map((m) => m.key),
   fxList: () => Object.keys(FX),
   model(key: string, o: Partial<Anim> & { cam?: string } = {}): void {
@@ -426,7 +394,7 @@ const api = {
   },
   params: () => paramsFor(current),
   hideUi(h = true): void {
-    left.style.display = right.style.display = h ? 'none' : '';
+    document.querySelectorAll<HTMLElement>('.lab-side,.pg-lab .pg-nav').forEach((e) => (e.style.display = h ? 'none' : ''));
   },
   anim,
   renderer: R,

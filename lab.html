@@ -3,11 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NULL//ARENA Lab</title>
+    <title>NULL//ARENA · лаборатория</title>
+    <!-- the app is a single page now: old links land on its route -->
+    <meta http-equiv="refresh" content="0; url=./#/lab" />
+    <script>location.replace('./' + location.search + '#/lab');</script>
   </head>
-  <body>
-    <canvas id="game"></canvas>
-    <div id="lab-ui"></div>
-    <script type="module" src="/src/lab/lab.ts"></script>
-  </body>
+  <body style="background:#06050b"></body>
 </html>

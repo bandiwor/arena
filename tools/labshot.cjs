@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   const logs = [];
   page.on('console', (m) => { if (m.type() !== 'debug') logs.push(`[${m.type()}] ${m.text()}`); });
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
-  await page.goto('http://localhost:5173/lab.html');
+  await page.goto('http://localhost:5173/#/lab');
   await page.waitForFunction(() => window.lab && typeof window.lab.model === 'function', null, { timeout: 60000 });
   await page.waitForTimeout(1500);
   let i = 0;

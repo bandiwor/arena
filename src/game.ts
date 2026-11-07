@@ -183,13 +183,37 @@ export class Game {
     };
   }
 
+  private raf = 0;
+  /** true while another app page is shown: no frames, no sound */
+  suspended = false;
+
   run(): void {
     this.last = performance.now();
+    cancelAnimationFrame(this.raf);
     const loop = (now: number): void => {
+      if (this.suspended) return;
       this.frame(now);
-      requestAnimationFrame(loop);
+      this.raf = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(loop);
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  /** leave the game page: a running fight pauses, the loop and audio stop (instant to resume) */
+  suspend(): void {
+    if (this.suspended) return;
+    if (this.mode === 'play') this.setMode('pause');
+    this.touch.release();
+    this.suspended = true;
+    cancelAnimationFrame(this.raf);
+    void this.audio.ctx?.suspend();
+  }
+
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.audio.resume();
+    this.renderer.resize();
+    this.run();
   }
 
   private stepOnce(): void {

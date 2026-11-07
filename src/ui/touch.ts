@@ -7,12 +7,13 @@
  *               aim (the player keeps facing it) and stops firing.
  *  ДЕШ button — right edge, above the resting thumb: one tap = dash (move direction, or facing).
  *               A conic ring shows the cooldown; the button "pops" when ready.
- *  ⇄ button  — next weapon (the HUD weapon slots are tappable too).
- *  ❚❚ button — pause.
+ *  swap button — next weapon (the HUD weapon slots are tappable too).
+ *  pause button — pause.
  *
  * Only writes plain numbers; InputDevice turns them into the deterministic InputCmd.
  */
 import type { Place, TouchLayout } from './settings';
+import { iconHtml } from './icons';
 
 export class TouchControls {
   readonly root: HTMLElement;
@@ -63,8 +64,8 @@ export class TouchControls {
       <div class="stick st-l idle"><i></i><b></b></div>
       <div class="stick st-r idle"><i></i><b></b></div>
       <button class="tbtn t-dash" aria-label="Рывок"><span>РЫВОК</span></button>
-      <button class="tbtn t-swap" aria-label="Следующее оружие">⇄<small></small></button>
-      <button class="tbtn t-pause" aria-label="Пауза">❚❚</button>`;
+      <button class="tbtn t-swap" aria-label="Следующее оружие">${iconHtml('swap')}<small></small></button>
+      <button class="tbtn t-pause" aria-label="Пауза">${iconHtml('pause')}</button>`;
     parent.prepend(root);
     this.root = root;
     this.L = new Stick(root.querySelector('.st-l')!);
@@ -249,7 +250,7 @@ export class TouchControls {
     r.el.classList.toggle('fire', this.firing);
   }
 
-  /** per frame: dash cooldown ring + current weapon name on ⇄ */
+  /** per frame: dash cooldown ring + current weapon name on the swap button */
   update(dashFrac: number, weaponName: string, slots: number): void {
     if (!this.shown || !this.active) return;
     const f = Math.max(0, Math.min(1, dashFrac));

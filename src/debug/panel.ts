@@ -8,6 +8,8 @@ import type { Game } from '../game';
 import type { DebugApi } from './dbg';
 import type { DebugOverlay, OverlayKind } from './overlay';
 import { SCENES } from './dbg';
+import { navigate } from '../app/router';
+import { iconHtml } from '../ui/icons';
 
 /**
  * Debug hub: every page, scene and tool in one drawer. Opened from the main menu ("Отладка")
@@ -103,12 +105,12 @@ export class DebugPanel {
     const ov = this.overlay.kind;
     const ovs: OverlayKind[] = ['off', 'hitbox', 'ai', 'flow', 'grid', 'all'];
     this.el.innerHTML = `
-      <header><b>NULL<span>//</span>DEBUG</b><button data-act="close" title="F1 / Esc">✕</button></header>
+      <header><b>NULL<span>//</span>DEBUG</b><button data-act="close" title="F1 / Esc">${iconHtml('close')}</button></header>
       ${this.section(
         'Страницы',
-        this.btn('Лаборатория ассетов ↗', 'page', 'lab.html', false, 'модели, анимации, эффекты, звуки, пост-обработка') +
-        this.btn('UI-кит ↗', 'page', 'kit.html', false, 'все элементы интерфейса во всех состояниях') +
-        this.btn('Обучение ботов ↗', 'page', 'train.html', false, 'эволюция ботов, награды, сохранённые модели') +
+        this.btn('Лаборатория ассетов', 'page', '#/lab', false, 'модели, анимации, эффекты, звуки, пост-обработка') +
+        this.btn('UI-кит', 'page', '#/kit', false, 'все элементы интерфейса во всех состояниях') +
+        this.btn('Обучение ботов', 'page', '#/train', false, 'эволюция ботов, награды, сохранённые модели') +
           this.btn('Пустая песочница', 'scene', 'arena') +
           this.btn('Игра с ?debug ↗', 'page', '?debug'),
       )}
@@ -119,7 +121,7 @@ export class DebugPanel {
       )}
       ${this.section(
         'Время и состояние',
-        this.btn(g.paused ? '▶ Продолжить' : '⏸ Пауза', 'pause') +
+        this.btn(g.paused ? 'Продолжить' : 'Пауза', 'pause') +
           this.btn('Шаг +1', 'step', '1') +
           this.btn('Шаг +10', 'step', '10') +
           [0.25, 0.5, 1, 2].map((s) => this.btn(`${s}×`, 'speed', String(s), g.timeScale === s)).join('') +
@@ -150,7 +152,10 @@ export class DebugPanel {
       case 'close':
         return this.hide();
       case 'page':
-        location.href = arg;
+        if (arg.startsWith('#/')) {
+          this.hide();
+          navigate(arg);
+        } else location.href = arg;
         return;
       case 'scene':
         a.scene(arg, (Date.now() % 100000) + 1, 1);

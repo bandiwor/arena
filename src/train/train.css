@@ -1,9 +1,6 @@
 /* NULL//TRAIN page */
-/* the page itself scrolls: body must not be a (dead) scroll container, or overscroll-behavior: none
-   on it swallows every wheel / swipe */
-html:has(body.train-page) { height: auto; overflow: auto; }
-body.train-page { height: auto; overflow: visible; }
-body.train-page { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
+/* the page container (.pg-train, app.css) is the scroll container */
+.pg-train { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
 .tr-head { display: flex; justify-content: space-between; align-items: flex-end; padding: 22px 26px 6px; gap: 16px; }
 .tr-head .title { font-size: clamp(36px, 5vw, 64px); }
 .tr-head .sub { margin: 6px 0 0; }
@@ -50,3 +47,6 @@ body.train-page { background: radial-gradient(ellipse at top, #120c26, var(--voi
 .tr-gene u.n { background: var(--magenta); box-shadow: 0 0 6px var(--magenta); }
 .tr-gene b { text-align: right; color: var(--muted); font-weight: 400; }
 .tr-star { font: 400 11px var(--mono); color: var(--lime); }
+.tr-models .k-row { grid-template-columns: 1fr; gap: 6px; }
+.tr-models .k-ctl { justify-content: stretch; }
+.tr-models .k-text { width: 100%; }

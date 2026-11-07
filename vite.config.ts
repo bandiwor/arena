@@ -60,6 +60,7 @@ function pwaPlugin(): Plugin {
 export default defineConfig(({ command }) => ({
   base: './',
   plugins: [glslMinify(), pwaPlugin()],
+  oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   css: {
     transformer: 'lightningcss',
     lightningcss: { targets: { chrome: 110 << 16, firefox: 115 << 16, safari: 16 << 16 } },

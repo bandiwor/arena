@@ -1,9 +1,10 @@
 import type { Game } from '../game';
+import { iconHtml } from './icons';
 
 /**
- * App shell around the game:
- *  - boot screen: one tap unlocks audio (browsers need a gesture), enters fullscreen and locks
- *    landscape on touch devices, then shows the audio synthesis ("compilation") progress;
+ * App shell around the game (the boot screen itself is the Preact <Boot>, which calls begin()):
+ *  - boot gesture: one tap unlocks audio (browsers need a gesture), enters fullscreen and locks
+ *    landscape on touch devices;
  *  - fullscreen keeper: mobile browsers drop fullscreen when the tab/app is switched — the game
  *    pauses, and the very next tap anywhere restores fullscreen (a chip also offers it);
  *  - pause on tab hide / portrait rotation, audio suspend/resume.
@@ -24,14 +25,14 @@ export class Shell {
 
   constructor(
     private readonly game: Game,
-    private readonly root: HTMLElement,
+    root: HTMLElement,
     private readonly startAudio: () => void,
   ) {
     this.touch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
     document.body.classList.toggle('coarse', this.touch);
     this.chip = document.createElement('button');
     this.chip.className = 'fs-chip hidden';
-    this.chip.innerHTML = '⛶ <span>Полный экран</span>';
+    this.chip.innerHTML = `${iconHtml('fullscreen')} <span>Полный экран</span>`;
     root.appendChild(this.chip);
     this.rotate = document.createElement('div');
     this.rotate.className = 'rotate hidden';
@@ -126,69 +127,27 @@ export class Shell {
     this.chip.classList.toggle('hidden', !lost);
   }
 
-  /**
-   * First screen. Resolves once the essential sounds are synthesised (music keeps
-   * rendering in the background). `skip` boots silently for debug/screenshot URLs.
-   */
-  boot(skip: boolean): Promise<void> {
-    if (skip) {
-      this.booted = true;
-      return Promise.resolve();
+  /** the boot gesture (a real user activation): fullscreen + landscape on touch, audio unlock */
+  begin(): void {
+    this.booted = true;
+    if (this.touch) {
+      this.wantFs = true;
+      this.enterFs();
     }
-    const el = document.createElement('div');
-    el.className = 'screen boot';
-    const iosHint = this.touch && !this.fsSupported() && !this.standalone();
-    el.innerHTML = `<div class="col">
-      <h1 class="title">NULL<span>//</span>ARENA</h1>
-      <button class="btn boot-go">${this.touch ? 'Коснись, чтобы начать' : 'Нажми, чтобы начать'}</button>
-      <div class="boot-note">${this.touch ? 'полный экран · ' : ''}звук будет включён${this.touch ? ' · играй в наушниках' : ''}</div>
-      ${iosHint ? '<div class="boot-note ios">Для полного экрана на iPhone: <b>Поделиться → «На экран Домой»</b></div>' : ''}
-      <div class="boot-prog hidden"><div class="bar"><i></i></div><pre></pre></div>
-    </div>`;
-    this.root.appendChild(el);
-    return new Promise((resolve) => {
-      let started = false;
-      const go = (): void => {
-        if (started) return;
-        started = true;
-        this.booted = true;
-        if (this.touch) {
-          this.wantFs = true;
-          this.enterFs();
-        }
-        this.startAudio();
-        el.querySelector('.boot-go')!.classList.add('hidden');
-        el.querySelectorAll('.boot-note').forEach((n) => n.classList.add('hidden'));
-        const prog = el.querySelector<HTMLElement>('.boot-prog')!;
-        prog.classList.remove('hidden');
-        const bar = prog.querySelector<HTMLElement>('.bar i')!;
-        const log = prog.querySelector<HTMLElement>('pre')!;
-        const a = this.game.audio;
-        const t0 = performance.now();
-        const step = (): void => {
-          const P = a.progress;
-          const f = a.ctx ? Math.min(1, P.done / Math.max(1, P.total)) : 1;
-          bar.style.transform = `scaleX(${f.toFixed(3)})`;
-          const stage = !a.ready ? 'синтез звуков' : !a.bedsReady ? 'синтез атмосферы' : 'синтез музыки';
-          log.textContent = `> аудио-контекст: ${a.ctx ? a.ctx.state : 'нет'}\n> ${stage} ......... ${Math.round(f * 100)}%`;
-          // menu is usable once sfx + ambience exist; music keeps rendering in the background
-          const done = !a.ctx || (a.ready && a.bedsReady) || performance.now() - t0 > 30000;
-          if (done) {
-            el.classList.add('out');
-            setTimeout(() => el.remove(), 450);
-            resolve();
-          } else requestAnimationFrame(step);
-        };
-        step();
-      };
-      el.addEventListener('click', go);
-      window.addEventListener(
-        'keydown',
-        (e) => {
-          if (!started && (e.code === 'Enter' || e.code === 'Space')) go();
-        },
-        { once: false },
-      );
-    });
+    this.startAudio();
+  }
+
+  /** debug / screenshot URLs boot silently */
+  skip(): void {
+    this.booted = true;
+  }
+
+  get isTouch(): boolean {
+    return this.touch;
+  }
+
+  /** iPhone Safari has no fullscreen API: suggest «На экран Домой» */
+  get iosHint(): boolean {
+    return this.touch && !this.fsSupported() && !this.standalone();
   }
 }

@@ -23,6 +23,8 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
+    "@preact/signals": "^2.11.4",
+    "preact": "^11.2.0",
     "three": "^0.187.0"
   }
 }

@@ -175,7 +175,10 @@ html, body {
 .stats { display: grid; grid-template-columns: repeat(4, auto); gap: 6px 28px; font: 400 13px var(--mono); color: var(--muted); }
 .stats b { color: var(--ink); display: block; font-size: 22px; }
 
-.replaybar { position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); pointer-events: auto; display: flex; gap: 8px; align-items: center; font: 700 12px var(--mono); color: var(--amber); letter-spacing: 0.2em; }
+.replaybar { position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 24px); gap: 8px; align-items: center; font: 700 12px var(--mono); color: var(--amber); letter-spacing: 0.2em; }
+.replaybar .rb-label { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.replaybar .ico { width: 16px; height: 16px; }
+.replaybar .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .replaybar .btn.on { background: var(--amber); color: var(--void); }
 .botbar { color: var(--cyan); }
 .botbar .btn { color: var(--cyan) !important; border-color: var(--cyan) !important; }
@@ -319,6 +322,8 @@ body { touch-action: manipulation; }
 .t-swap { width: calc(54px * var(--s, 1)); height: calc(54px * var(--s, 1)); font-size: 20px; color: var(--muted); border-color: rgb(127 134 168 / 0.5); }
 .t-swap small { position: absolute; top: 100%; margin-top: 3px; white-space: nowrap; font: 700 9px var(--mono); letter-spacing: 0.05em; color: var(--muted); }
 .t-pause { width: calc(40px * var(--s, 1)); height: calc(40px * var(--s, 1)); font-size: 13px; letter-spacing: 0; color: var(--muted); border-color: rgb(127 134 168 / 0.45); }
+.t-swap .ico { width: 24px; height: 24px; }
+.t-pause .ico { width: 18px; height: 18px; }
 body.touch-ui .weapons { pointer-events: auto; }
 body.touch-ui .wslot { cursor: pointer; }
 body.touch-ui .dash { display: none; }
@@ -507,9 +512,7 @@ body:not(.coarse) .help .tc { display: none; }
 }
 
 /* ═════════════ UI kit showcase page (/kit.html) */
-html:has(body.kit-page) { height: auto; overflow: auto; }
-body.kit-page { height: auto; overflow: visible; }
-body.kit-page { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
+.pg-kit { background: radial-gradient(ellipse at top, #120c26, var(--void) 60%); }
 .kit-head { padding: 28px 28px 0; }
 .kit-head .title { font-size: clamp(40px, 6vw, 72px); }
 .kit-head .sub { margin: 8px 0 14px; }
@@ -529,3 +532,9 @@ body.kit-page { background: radial-gradient(ellipse at top, #120c26, var(--void)
 
 /* five difficulties: the last card (bot level) spans the row */
 .mm-diffs .k-card:nth-child(5):last-child { grid-column: 1 / -1; min-height: 0; }
+.kit-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; margin-bottom: 4px; }
+.kit-icons button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 8px; background: rgb(255 255 255 / 0.02); border: 1px solid rgb(127 134 168 / 0.15); color: var(--ic); cursor: pointer; font: 400 10px var(--mono); clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.kit-icons button span { color: var(--muted); }
+.kit-icons button .ico { width: 30px; height: 30px; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ic) 70%, transparent)); }
+.kit-icons button:hover { border-color: var(--ic); background: color-mix(in srgb, var(--ic) 8%, transparent); }
+.ic-cyan { --ic: var(--cyan); } .ic-magenta { --ic: var(--magenta); } .ic-amber { --ic: var(--amber); } .ic-ink { --ic: var(--ink); }

@@ -1,5 +1,5 @@
-#lab-ui { position: fixed; inset: 0; pointer-events: none; font: 400 12px var(--mono); }
-#game { cursor: grab; }
+.lab-ui { position: absolute; inset: 0; pointer-events: none; font: 400 12px var(--mono); }
+.lab-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .lab-side { position: absolute; top: 0; bottom: 0; width: 248px; overflow-y: auto; pointer-events: auto; background: rgb(6 5 12 / 0.86); border-right: 1px solid var(--line); padding: 10px; }
 .lab-side.right { right: 0; border-right: 0; border-left: 1px solid var(--line); width: 280px; }
 .lab-side h2 { font: 700 11px var(--mono); letter-spacing: 0.25em; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; }
