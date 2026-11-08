@@ -12,6 +12,7 @@ import { Hud } from './ui/hud';
 import { TouchControls } from './ui/touch';
 import { weaponDef } from './sim/content/weapons';
 import type { BotSkill, InputFn } from './sim/scenario';
+import { DynamicResolution } from './render/dynres';
 
 export type Mode = 'menu' | 'play' | 'pause' | 'over' | 'replay' | 'demo';
 
@@ -184,6 +185,7 @@ export class Game {
   }
 
   private raf = 0;
+  readonly dynRes = new DynamicResolution();
   /** true while another app page is shown: no frames, no sound */
   suspended = false;
 
@@ -239,7 +241,12 @@ export class Game {
   }
 
   private frame(now: number): void {
-    const realDt = Math.min(0.1, (now - this.last) / 1000);
+    const rawDt = (now - this.last) / 1000;
+    if (this.dynRes.update(rawDt)) {
+      this.renderer.autoScale = this.dynRes.scale;
+      this.renderer.resize();
+    }
+    const realDt = Math.min(0.1, rawDt);
     this.last = now;
     const t0 = performance.now();
     const J = this.renderer.juice;

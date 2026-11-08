@@ -2,6 +2,7 @@ import { AS, ARENA_HH, ARENA_HW } from '../sim/constants';
 import { enemyDef } from '../sim/content/enemies';
 import { BOSS_PATTERN_NAMES } from '../ai/boss';
 import type { Game } from '../game';
+import { flowCell } from '../ai/flowfield';
 
 export type OverlayKind = 'off' | 'hitbox' | 'ai' | 'flow' | 'grid' | 'all';
 const STATE_NAMES = Object.fromEntries(Object.entries(AS).map(([k, v]) => [v, k])) as Record<number, string>;
@@ -82,6 +83,7 @@ export class DebugOverlay {
           this.proj(wx, 0, wy);
           const ax = this.uv[0]!;
           const ay = this.uv[1]!;
+          flowCell(this.game.world, i);
           this.proj(wx + F.dirX[i]! * 0.4, 0, wy + F.dirY[i]! * 0.4);
           g.beginPath();
           g.moveTo(ax, ay);

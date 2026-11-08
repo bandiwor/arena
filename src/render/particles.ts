@@ -137,12 +137,27 @@ export class Particles {
   private readonly a3: InstancedBufferAttribute;
   private readonly material: ShaderMaterial;
   private readonly attrs: InstancedBufferAttribute[];
+  private readonly geo: InstancedBufferGeometry;
   private cursor = 0;
+  /** dirty slots: [dirtyStart, dirtyEnd) of the previous lap + [0, cursor) after a wrap */
   private dirtyStart = -1;
-  private dirtyCount = 0;
+  private dirtyEnd = 0;
   private wrapped = false;
+  /**
+   * Adaptive ring: the buffer is drawn only up to the slots that can hold live particles. A lap
+   * restarts at slot 0 as soon as everything written a full max-lifetime ago is dead, so the
+   * instance count follows the live count (~1–3k in a heavy fight) instead of the capacity (32k):
+   * the vertex shader (full ballistic integration per vertex) used to run 131k times per frame.
+   */
+  private lapStart = 0;
+  private lapDeath = 0;
+  private prevHW = 0;
+  private prevDeath = -1;
+  private maxLife = 1;
   time = 0;
   emitted = 0;
+  /** instances submitted this frame (debug / stats) */
+  drawn = 0;
 
   constructor(
     scene: Scene,
@@ -169,7 +184,8 @@ export class Particles {
     g.setAttribute('a2', this.a2);
     g.setAttribute('a3', this.a3);
     this.attrs = [this.a0, this.a1, this.a2, this.a3];
-    g.instanceCount = capacity;
+    g.instanceCount = 0;
+    this.geo = g;
     this.material = new ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -210,12 +226,12 @@ export class Particles {
     shape: number,
     alpha: number,
   ): void {
-    const i = this.cursor;
-    this.cursor++;
-    if (this.cursor >= this.capacity) {
-      this.cursor = 0;
-      this.wrapped = true;
-    }
+    // start a new lap: at capacity, or early once this lap is older than any particle can live
+    if (this.cursor >= this.capacity || (this.cursor >= 1024 && this.time - this.lapStart > this.maxLife * 1.25)) this.wrap();
+    const i = this.cursor++;
+    if (life > this.maxLife) this.maxLife = life;
+    const death = this.time + life;
+    if (death > this.lapDeath) this.lapDeath = death;
     const o = i * 4;
     const A0 = this.a0.array as Float32Array;
     const A1 = this.a1.array as Float32Array;
@@ -238,28 +254,50 @@ export class Particles {
     A3[o + 2] = shape;
     A3[o + 3] = alpha;
     if (this.dirtyStart < 0) this.dirtyStart = i;
-    this.dirtyCount++;
     this.emitted++;
+  }
+
+  private wrap(): void {
+    const alivePrev = this.prevDeath > this.time;
+    this.prevHW = alivePrev ? Math.max(this.prevHW, this.cursor) : this.cursor;
+    this.prevDeath = alivePrev ? Math.max(this.prevDeath, this.lapDeath) : this.lapDeath;
+    if (this.wrapped) {
+      // second lap within one frame (a huge burst): just upload everything
+      this.dirtyStart = 0;
+      this.dirtyEnd = this.capacity;
+    } else if (this.dirtyStart >= 0) {
+      this.dirtyEnd = this.cursor;
+      this.wrapped = true;
+    }
+    this.cursor = 0;
+    this.lapStart = this.time;
+    this.lapDeath = this.time;
   }
 
   update(time: number): void {
     this.time = time;
     this.material.uniforms['uTime']!.value = time;
-    if (this.dirtyCount === 0) return;
-    const start = this.dirtyStart;
-    const n = Math.min(this.dirtyCount, this.capacity);
+    // everything dead: rewind so the next burst starts a short ring
+    if (time > this.lapDeath && time > this.prevDeath && this.cursor > 0 && this.dirtyStart < 0) {
+      this.cursor = 0;
+      this.prevHW = 0;
+      this.lapStart = time;
+    }
+    this.drawn = time < this.prevDeath ? Math.max(this.prevHW, this.cursor) : this.cursor;
+    this.geo.instanceCount = this.drawn;
+    if (this.dirtyStart < 0 && !this.wrapped) return;
     for (const a of this.attrs) {
       a.clearUpdateRanges();
-      if (this.wrapped || start + n > this.capacity) {
-        a.addUpdateRange(start * 4, (this.capacity - start) * 4);
-        a.addUpdateRange(0, this.cursor * 4);
+      if (this.wrapped) {
+        if (this.dirtyStart >= 0 && this.dirtyEnd > this.dirtyStart) a.addUpdateRange(this.dirtyStart * 4, (this.dirtyEnd - this.dirtyStart) * 4);
+        if (this.cursor > 0) a.addUpdateRange(0, this.cursor * 4);
       } else {
-        a.addUpdateRange(start * 4, n * 4);
+        a.addUpdateRange(this.dirtyStart * 4, (this.cursor - this.dirtyStart) * 4);
       }
       a.needsUpdate = true;
     }
     this.dirtyStart = -1;
-    this.dirtyCount = 0;
+    this.dirtyEnd = 0;
     this.wrapped = false;
   }
 }

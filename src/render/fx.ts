@@ -1441,6 +1441,7 @@ export class FxDirector {
     // gravity wells
     const W = w.wells;
     const wellU = this.d.floor.material.uniforms['uWells']!.value as { set(a: number, b: number, c: number, d: number): void }[];
+    this.d.floor.material.uniforms['uWellCount']!.value = Math.min(4, W.count);
     for (let k = 0; k < 4; k++) {
       if (k < W.count) {
         const s = W.strength[k]!;

@@ -30,7 +30,7 @@ type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never 
 const RESET: Record<TabId, (keyof Settings)[]> = {
   sound: ['volume', 'music', 'ambience', 'weapons', 'impacts', 'enemies', 'world', 'ui', 'binaural', 'night', 'lowHpFx', 'muteHidden'],
   game: ['difficulty', 'shake', 'freeze', 'lookAhead', 'autoPause', 'showFps', 'vibration'],
-  gfx: ['quality', 'dprCap', 'bloom', 'flash', 'distort', 'scan', 'grain', 'vignette'],
+  gfx: ['quality', 'autoRes', 'dprCap', 'bloom', 'flash', 'distort', 'scan', 'grain', 'vignette'],
   controls: ['aimAssist', 'dblTapDash', 'fireAt'],
 };
 const PRESETS = {
@@ -168,6 +168,9 @@ export function SettingsScreen({ host }: { host: GameHost }): JSX.Element {
         <Section title="Производительность">
           <Row label="Разрешение рендера" hint="доля от размера экрана">
             <Segmented value={s.quality} options={[0.5, 0.75, 1].map((v) => ({ value: v, label: `${v * 100}%` }))} onChange={(v) => set('quality', v)} />
+          </Row>
+          <Row label="Авто-разрешение" hint="если кадр не успевает (ниже ~48 FPS), разрешение снижается до 50% и возвращается, когда есть запас">
+            {tog('autoRes')}
           </Row>
           <Row label="Плотность пикселей" hint={`экран: ${(window.devicePixelRatio || 1).toFixed(2)}× — выше = чётче, но тяжелее`}>
             <Segmented value={s.dprCap} options={[1, 1.5, 2].map((v) => ({ value: v, label: `${v}×` }))} onChange={(v) => set('dprCap', v)} />

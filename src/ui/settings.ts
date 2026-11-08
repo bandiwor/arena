@@ -41,6 +41,8 @@ export interface Settings {
   vibration: boolean;
   // ── graphics
   quality: number;
+  /** lower the internal resolution automatically when the GPU can't keep up */
+  autoRes: boolean;
   dprCap: number;
   bloom: number;
   flash: number;
@@ -90,6 +92,7 @@ export function defaultSettings(): Settings {
     showFps: false,
     vibration: true,
     quality: phone ? 0.75 : 1,
+    autoRes: true,
     dprCap: phone ? 1.5 : 2,
     bloom: 1,
     flash: 1,
@@ -155,6 +158,7 @@ export function applySettings(game: Game, s: Settings): void {
   P.scan = s.scan;
   P.grain = s.grain;
   P.vignette = s.vignette;
+  game.dynRes.enabled = s.autoRes;
   const pr = Math.min(s.dprCap, window.devicePixelRatio || 1);
   if (r.renderScale !== s.quality || r.pixelRatio !== pr) {
     r.renderScale = s.quality;

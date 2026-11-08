@@ -1,3 +1,5 @@
+import { DataTexture, LinearFilter, RedFormat, RepeatWrapping, UnsignedByteType } from 'three';
+
 export const MAX_LIGHTS = 24;
 
 export const NOISE = /* glsl */ `
@@ -29,3 +31,38 @@ vec3 pointLights(vec3 P, vec3 N, float wrap){
   return acc;
 }
 `;
+
+/**
+ * Value noise from a 256² lattice texture (tNoise): ONE bilinear fetch at i + hermite(f) gives
+ * exactly the smoothstep-interpolated value noise that `vnoise` computes with 4 hashes, and fbmT
+ * is 4 fetches instead of 16 hashes + math. Used by the floor, the most expensive full-screen
+ * shader. Needs the `tNoise` uniform (noiseTexture()).
+ */
+export const NOISE_TEX = /* glsl */ `
+uniform sampler2D tNoise;
+float vnoiseT(vec2 p){ vec2 i = mod(floor(p), 256.0); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+  return texture2D(tNoise, (i + u + 0.5) / 256.0).r; }
+float fbmT(vec2 p){ float a = 0.5; float s = 0.0; for(int i=0;i<4;i++){ s += a*vnoiseT(p); p = p*2.03 + 17.1; a *= 0.5; } return s; }
+`;
+
+let noiseTex: DataTexture | null = null;
+/** 256² lattice of uniform random values (deterministic), wrapping, linearly filtered */
+export function noiseTexture(): DataTexture {
+  if (noiseTex) return noiseTex;
+  const N = 256;
+  const data = new Uint8Array(N * N);
+  let s = 0x9e3779b9;
+  for (let i = 0; i < data.length; i++) {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    data[i] = (s >>> 0) & 255;
+  }
+  const t = new DataTexture(data, N, N, RedFormat, UnsignedByteType);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.magFilter = t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  noiseTex = t;
+  return t;
+}

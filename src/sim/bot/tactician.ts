@@ -159,8 +159,14 @@ for (let k = 0; k < DIRS; k++) {
 CAND_X[DIRS] = 0;
 CAND_Y[DIRS] = 0;
 
-const MELEE = new Set<number>([ET.Swarmer, ET.Charger, ET.Bloater, ET.Dart, ET.Parasite, ET.Worm, ET.GearMite, ET.Skiff, ET.Stamper, ET.Arm, ET.Brood, ET.Assembler]);
-const SMALL = new Set<number>([ET.Swarmer, ET.Dart, ET.Parasite, ET.GearMite, ET.Worm]);
+/** per-type lookup tables (hot loops: a typed-array read instead of a Set lookup) */
+const typeFlags = (types: number[]): Uint8Array => {
+  const t = new Uint8Array(64);
+  for (const k of types) t[k] = 1;
+  return t;
+};
+const MELEE = typeFlags([ET.Swarmer, ET.Charger, ET.Bloater, ET.Dart, ET.Parasite, ET.Worm, ET.GearMite, ET.Skiff, ET.Stamper, ET.Arm, ET.Brood, ET.Assembler]);
+const SMALL = typeFlags([ET.Swarmer, ET.Dart, ET.Parasite, ET.GearMite, ET.Worm]);
 
 function segDist2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
@@ -173,15 +179,54 @@ function segDist2(px: number, py: number, ax: number, ay: number, bx: number, by
   return cx * cx + cy * cy;
 }
 
-/** danger of standing at (x, y) τ seconds from now */
+/**
+ * Relevance prefilter, built once per decision (prepDanger): danger() is evaluated ~90 times per
+ * decision (17 directions × 3 horizons + 16 dash landings) and used to scan every bullet and enemy
+ * each time. All candidate points lie within `reach` of the player, so only bullets whose next
+ * 0.5 s pass near that disc and enemies whose attack reach (body, sweep, up to a 26-unit lane) can
+ * touch it are kept. The bounds are conservative: the bot decides exactly as before.
+ */
+const relB = new Int32Array(4096);
+const relE = new Int32Array(1024);
+let nRelB = 0;
+let nRelE = 0;
+function prepDanger(w: World, W: TacticianWeights, speed: number): void {
+  const p = w.player;
+  const pr = p.r;
+  // farthest candidate: a move (speed·0.5 + belt drift) or a dash landing (5.1)
+  const reach = Math.max(speed * 0.5 + 2.4, 5.2) + 0.3;
+  const B = w.bullets;
+  nRelB = 0;
+  for (let b = 0; b < B.hi; b++) {
+    if (!B.alive[b] || B.team[b] !== Team.Enemy) continue;
+    const lim = reach + B.r[b]! + pr + W.bulletMargin + 1;
+    if (segDist2(p.x, p.y, B.x[b]!, B.y[b]!, B.x[b]! + B.vx[b]! * 0.5, B.y[b]! + B.vy[b]! * 0.5) < lim * lim && nRelB < relB.length) relB[nRelB++] = b;
+  }
+  const E = w.enemies;
+  nRelE = 0;
+  for (let i = 0; i < E.hi; i++) {
+    if (!E.alive[i] || E.st[i] === AS.Spawning) continue;
+    const st = E.st[i]!;
+    const r = E.r[i]!;
+    const lane = st === AS.Windup || st === AS.Dash || st === AS.Leap ? 26 + r + 1.2 + pr : 0;
+    const body = Math.max(4.0, r + 3.6, r + pr + W.meleeBuf * 1.5);
+    const move = Math.sqrt(E.vx[i]! * E.vx[i]! + E.vy[i]! * E.vy[i]!) * 0.35;
+    const lim = reach + Math.max(lane, body) + move + 0.5;
+    const dx = E.x[i]! - p.x;
+    const dy = E.y[i]! - p.y;
+    if (dx * dx + dy * dy < lim * lim && nRelE < relE.length) relE[nRelE++] = i;
+  }
+}
+
+/** danger of standing at (x, y) τ seconds from now (call prepDanger first in the decision) */
 function danger(w: World, x: number, y: number, tau: number, W: TacticianWeights): number {
   const p = w.player;
   const pr = p.r;
   let c = 0;
   // ── enemy projectiles (where each will be at τ)
   const B = w.bullets;
-  for (let b = 0; b < B.hi; b++) {
-    if (!B.alive[b] || B.team[b] !== Team.Enemy) continue;
+  for (let q = 0; q < nRelB; q++) {
+    const b = relB[q]!;
     const bx = B.x[b]! + B.vx[b]! * tau;
     const by = B.y[b]! + B.vy[b]! * tau;
     const dx = bx - x;
@@ -241,8 +286,8 @@ function danger(w: World, x: number, y: number, tau: number, W: TacticianWeights
   }
   // ── enemies: bodies, wind-ups and attack lanes
   const E = w.enemies;
-  for (let i = 0; i < E.hi; i++) {
-    if (!E.alive[i] || E.st[i] === AS.Spawning) continue;
+  for (let q = 0; q < nRelE; q++) {
+    const i = relE[q]!;
     const t = E.type[i]!;
     const st = E.st[i]!;
     const ex = E.x[i]! + E.vx[i]! * tau * 0.7;
@@ -268,16 +313,17 @@ function danger(w: World, x: number, y: number, tau: number, W: TacticianWeights
       let len = 0;
       let wid = 0;
       let a = E.aim[i]!;
-      if (t === ET.Charger) [len, wid] = [15, E.r[i]! + 1.2];
-      else if (t === ET.Dart) [len, wid] = [10, 1.1];
-      else if (t === ET.Archer && ch > 0.5) [len, wid] = [26, 0.9];
-      else if (t === ET.Hauler) [len, wid] = [9.5, 1.2];
-      else if (t === ET.GearMite) [len, wid, a] = [9, 0.9, E.face[i]!];
-      else if (t === ET.Gunner) [len, wid, a] = [20, 0.9, E.face[i]!];
-      else if (t === ET.Swarmer || t === ET.Parasite) [len, wid, a] = [5, 0.9, E.face[i]!];
+      if (t === ET.Charger) { len = 15; wid = E.r[i]! + 1.2; }
+      else if (t === ET.Dart) { len = 10; wid = 1.1; }
+      else if (t === ET.Archer && ch > 0.5) { len = 26; wid = 0.9; }
+      else if (t === ET.Hauler) { len = 9.5; wid = 1.2; }
+      else if (t === ET.GearMite) { len = 9; wid = 0.9; a = E.face[i]!; }
+      else if (t === ET.Gunner) { len = 20; wid = 0.9; a = E.face[i]!; }
+      else if (t === ET.Swarmer || t === ET.Parasite) { len = 5; wid = 0.9; a = E.face[i]!; }
       else if (t === ET.ArcDrone) {
         a = Math.atan2(E.ty[i]! - E.y[i]!, E.tx[i]! - E.x[i]!);
-        [len, wid] = [10, 1.1];
+        len = 10;
+        wid = 1.1;
       }
       if (len > 0) {
         const lx = Math.cos(a);
@@ -290,7 +336,7 @@ function danger(w: World, x: number, y: number, tau: number, W: TacticianWeights
       }
     }
     // bodies: melee creatures want contact — keep a buffer, more for heavy hitters
-    if (MELEE.has(t)) {
+    if (MELEE[t]) {
       const buf = E.r[i]! + pr + W.meleeBuf * (t === ET.Charger || t === ET.Skiff ? 1.5 : 1);
       if (d < buf) c += (buf - d) * W.meleeW * (t === ET.Brood || t === ET.Assembler ? 1.9 : 1);
     } else if (d < E.r[i]! + pr + 0.6) c += 10;
@@ -388,7 +434,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
         ctx.total++;
         if (d < 6) ctx.close++;
         else if (d < 14) ctx.mid++;
-        if (SMALL.has(t)) ctx.small++;
+        if (SMALL[t]) ctx.small++;
         const def = enemyDef(t);
         if (def.material === Mat.Machine) ctx.machines++;
         if (E.maxHp[i]! >= 120) ctx.heavy++;
@@ -467,6 +513,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
 
       // ── movement: score candidates on the danger map
       const speed = 9.5 * p.stats.speedMul * w.phys.playerSpeed;
+      prepDanger(w, W, speed);
       // preferred range for this weapon
       const want = (wd.id === WP.Scatter ? 5 : wd.id === WP.Rail || wd.id === WP.ArcRail ? 13 : wd.id === WP.Launcher ? 10 : 9) * W.rangeMul;
       // health pickup: pull toward it, harder the more we are hurt
@@ -527,7 +574,7 @@ export function tactician(o: TacticianOpts = {}): (w: World, tick: number, c: In
         for (let i = 0; i < E.hi; i++) {
           if (!E.alive[i]) continue;
           if (E.type[i] === ET.Parasite && E.st[i] === AS.Attached && (E.tx[i]! | 0) === -1) latched = true;
-          if (!MELEE.has(E.type[i]!) || E.st[i] === AS.Spawning || E.st[i] === AS.Underground) continue;
+          if (!MELEE[E.type[i]!] || E.st[i] === AS.Spawning || E.st[i] === AS.Underground) continue;
           const dx = E.x[i]! - p.x;
           const dy = E.y[i]! - p.y;
           if (dx * dx + dy * dy < 9) surrounded++;

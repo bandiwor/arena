@@ -43,6 +43,8 @@ export class GameRenderer {
   realTime = 0;
   pixelRatio = Math.min(2, window.devicePixelRatio || 1);
   renderScale = 1;
+  /** automatic factor on top of renderScale (DynamicResolution) */
+  autoScale = 1;
   readonly stats: RenderStats = { drawCalls: 0, triangles: 0, particles: 0, quads: 0 };
   private tintR = 1;
   private tintG = 1;
@@ -86,7 +88,7 @@ export class GameRenderer {
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const pr = this.pixelRatio * this.renderScale;
+    const pr = this.pixelRatio * this.renderScale * this.autoScale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.post.setSize(Math.floor(w * pr), Math.floor(h * pr));
@@ -227,7 +229,7 @@ export class GameRenderer {
     this.post.render(this.scene, this.camera.cam);
     this.stats.drawCalls = this.renderer.info.render.calls;
     this.stats.triangles = this.renderer.info.render.triangles;
-    this.stats.particles = this.particles.emitted;
+    this.stats.particles = this.particles.drawn;
     this.stats.quads = this.quads.count;
   }
 }

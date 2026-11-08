@@ -539,8 +539,12 @@ export interface FlowField {
   cell: number;
   blocked: Uint8Array;
   dist: Uint16Array;
+  /** per-cell direction, computed lazily: valid where dirVer[c] === ver */
   dirX: Float32Array;
   dirY: Float32Array;
+  dirVer: Uint32Array;
+  /** bumps on every BFS (and when obstacles change) */
+  ver: number;
   queue: Int32Array;
   targetCell: number;
 }
@@ -696,6 +700,8 @@ export class World {
       dist: new Uint16Array(cols * rows),
       dirX: new Float32Array(cols * rows),
       dirY: new Float32Array(cols * rows),
+      dirVer: new Uint32Array(cols * rows),
+      ver: 1,
       queue: new Int32Array(cols * rows),
       targetCell: -1,
     };
@@ -788,4 +794,5 @@ export function buildArenaLayout(w: World): void {
     }
   }
   F.targetCell = -1;
+  F.ver++;
 }

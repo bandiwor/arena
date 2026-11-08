@@ -28,34 +28,45 @@ export function updateFlowField(w: World): void {
     if (y > 0) tail = visit(c - cols, d, dist, blocked, queue, tail);
     if (y < rows - 1) tail = visit(c + cols, d, dist, blocked, queue, tail);
   }
-  // gradient → direction (8-neighbour, diagonal only if not cutting corners)
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const c = y * cols + x;
-      let best = dist[c]!;
-      let bx = 0;
-      let by = 0;
-      for (let oy = -1; oy <= 1; oy++) {
-        const ny = y + oy;
-        if (ny < 0 || ny >= rows) continue;
-        for (let ox = -1; ox <= 1; ox++) {
-          if (ox === 0 && oy === 0) continue;
-          const nx = x + ox;
-          if (nx < 0 || nx >= cols) continue;
-          if (ox !== 0 && oy !== 0 && (blocked[y * cols + nx] || blocked[ny * cols + x])) continue;
-          const dn = dist[ny * cols + nx]!;
-          if (dn < best) {
-            best = dn;
-            bx = ox;
-            by = oy;
-          }
-        }
+  // directions are derived lazily per queried cell (cellDir): enemies ask for a few dozen
+  // cells per tick, the old eager pass computed all 3456 (8 neighbours each) on every BFS
+  F.ver++;
+}
+
+/** gradient → direction (8-neighbour, diagonal only if not cutting corners) for one cell */
+function cellDir(F: World['flow'], c: number): void {
+  const { cols, rows, dist, blocked } = F;
+  const x = c % cols;
+  const y = (c - x) / cols;
+  let best = dist[c]!;
+  let bx = 0;
+  let by = 0;
+  for (let oy = -1; oy <= 1; oy++) {
+    const ny = y + oy;
+    if (ny < 0 || ny >= rows) continue;
+    for (let ox = -1; ox <= 1; ox++) {
+      if (ox === 0 && oy === 0) continue;
+      const nx = x + ox;
+      if (nx < 0 || nx >= cols) continue;
+      if (ox !== 0 && oy !== 0 && (blocked[y * cols + nx] || blocked[ny * cols + x])) continue;
+      const dn = dist[ny * cols + nx]!;
+      if (dn < best) {
+        best = dn;
+        bx = ox;
+        by = oy;
       }
-      const l = Math.sqrt(bx * bx + by * by) || 1;
-      F.dirX[c] = bx / l;
-      F.dirY[c] = by / l;
     }
   }
+  const l = Math.sqrt(bx * bx + by * by) || 1;
+  F.dirX[c] = bx / l;
+  F.dirY[c] = by / l;
+  F.dirVer[c] = F.ver;
+}
+
+/** direction of one flow cell (computes it on first use after the field changed) */
+export function flowCell(w: World, c: number): void {
+  const F = w.flow;
+  if (F.dirVer[c] !== F.ver) cellDir(F, c);
 }
 
 function visit(n: number, d: number, dist: Uint16Array, blocked: Uint8Array, queue: Int32Array, tail: number): number {
@@ -76,6 +87,7 @@ export function flowDir(w: World, x: number, y: number): Float32Array {
   const cx = clampi(Math.floor((x + ARENA_HW) / F.cell), 0, F.cols - 1);
   const cy = clampi(Math.floor((y + ARENA_HH) / F.cell), 0, F.rows - 1);
   const c = cy * F.cols + cx;
+  if (F.dirVer[c] !== F.ver) cellDir(F, c);
   flowOut[0] = F.dirX[c]!;
   flowOut[1] = F.dirY[c]!;
   return flowOut;

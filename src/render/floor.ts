@@ -23,7 +23,7 @@ import {
 } from 'three';
 import { ARENA_H, ARENA_HH, ARENA_HW, ARENA_W } from '../sim/constants';
 import type { LightPool } from './lights';
-import { LIGHTS, NOISE } from './shaders/chunks';
+import { LIGHTS, NOISE, NOISE_TEX, noiseTexture } from './shaders/chunks';
 
 export const MAX_RIPPLES = 12;
 const DECAL_PX_PER_UNIT = 28;
@@ -213,7 +213,9 @@ void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position
 const FLOOR_FRAG = /* glsl */ `
 uniform float uTime;
 uniform sampler2D tDecal;
-uniform vec4 uRipples[${MAX_RIPPLES}]; // x, y, age, strength
+uniform vec4 uRipples[${MAX_RIPPLES}]; // x, y, age, strength — live ones packed first
+uniform int uRippleCount;
+uniform int uWellCount;
 uniform vec3 uTint;
 uniform float uIce;
 uniform float uCorrupt;
@@ -232,6 +234,7 @@ uniform vec4 uPads[8];   // x, y, phase01 state: 0 idle 1 mark(fill) 2 hot 3 ret
 uniform int uPadCount;
 varying vec3 vW;
 ${NOISE}
+${NOISE_TEX}
 ${LIGHTS}
 float hexDist(vec2 p){ p = abs(p); return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x); }
 // cellular noise → organic cells; x = F1, y = F2, z = cell id hash
@@ -259,8 +262,8 @@ void main(){
   vec2 rp = p;
   float rippleGlow = 0.0;
   for(int i=0;i<${MAX_RIPPLES};i++){
+    if(i >= uRippleCount) break;
     vec4 r = uRipples[i];
-    if(r.w <= 0.0) continue;
     vec2 d = p - r.xy; float l = length(d);
     float front = r.z * 22.0;
     float band = exp(-pow((l - front) * 0.9, 2.0)) * r.w * exp(-r.z * 2.5);
@@ -269,6 +272,7 @@ void main(){
   }
   // gravity wells swirl the grid
   for(int i=0;i<4;i++){
+    if(i >= uWellCount) break;
     vec4 wl = uWells[i];
     if(wl.w <= 0.0) continue;
     vec2 d = p - wl.xy; float l = length(d);
@@ -283,7 +287,7 @@ void main(){
   float id = hash12(hc.zw);
   // base: deep violet-black with subtle tile variation
   vec3 base = vec3(0.0065, 0.0055, 0.013) * (0.85 + id * 0.3);
-  base *= 0.9 + fbm(p * 0.15) * 0.25;
+  base *= 0.9 + fbmT(p * 0.15) * 0.25;
   // lights: the floor is where glows "land" — biggest contributor to the neon look
   vec3 N = vec3(0.0, 1.0, 0.0);
   vec3 lit = pointLights(vec3(p.x, 0.0, p.y), N, 0.0);
@@ -313,13 +317,13 @@ void main(){
   float st = (abs(uAct - 2.0) < 0.5 ? inF : 0.0) + (abs(uPrevAct - 2.0) < 0.5 && uSynthR >= 0.0 ? 1.0 - inF : 0.0);
   // ── Плоть: living tissue with pulsing veins
   if(fl > 0.0){
-    vec2 wp = p * 0.42 + vec2(fbm(p * 0.12 + 3.1), fbm(p * 0.12 - 7.7)) * 1.6;
+    vec2 wp = p * 0.42 + vec2(fbmT(p * 0.12 + 3.1), fbmT(p * 0.12 - 7.7)) * 1.6;
     vec3 c = cells(wp);
     float edge = c.y - c.x;
     float vein = 1.0 - smoothstep(0.0, 0.09, edge);
     float hb = pow(max(0.0, sin(uTime * 2.2)), 12.0) + 0.6 * pow(max(0.0, sin(uTime * 2.2 - 0.55)), 12.0);
     float travel = 0.5 + 0.5 * sin(rr * 0.6 - uTime * 3.0 + c.z * 6.0);
-    vec3 cell = vec3(0.02, 0.0035, 0.007) * (0.7 + c.z * 0.6) * (0.8 + fbm(p * 0.5) * 0.5);
+    vec3 cell = vec3(0.02, 0.0035, 0.007) * (0.7 + c.z * 0.6) * (0.8 + fbmT(p * 0.5) * 0.5);
     cell *= 0.75 + 0.5 * smoothstep(0.0, 0.5, c.x); // cell centres bulge (lighter), edges sink
     vec3 veinCol = vec3(0.22, 0.012, 0.035) * (0.35 + hb * 1.1 + travel * 0.25);
     vec3 fleshCol = cell + cell * litF * 4.0 + vein * veinCol + vein * litF * 0.05;
@@ -328,7 +332,9 @@ void main(){
       for(int k=0;k<12;k++){
         if(k >= uPoolCount) break;
         vec4 pl = uPools[k];
-        float d = length(p - pl.xy) / pl.z + (fbm(p * 0.8 + float(k)) - 0.5) * 0.18;
+        float d0 = length(p - pl.xy) / pl.z;
+        if(d0 > 1.2) continue; // the noisy rim only reaches ±0.09: skip the fbm far from the pool
+        float d = d0 + (fbmT(p * 0.8 + float(k)) - 0.5) * 0.18;
         if(d < 1.08){
           float inside = 1.0 - smoothstep(0.92, 1.0, d);
           vec3 liquid = vec3(0.025, 0.0, 0.006) + litF * vec3(0.05, 0.03, 0.04) + vec3(0.06, 0.0, 0.012) * (0.5 + 0.5 * sin(d * 18.0 - uTime * 1.6)) * 0.4;
@@ -348,7 +354,7 @@ void main(){
     float seamD = 0.5 - max(abs(f.x), abs(f.y));
     float seam = 1.0 - smoothstep(0.0, 0.018, seamD);
     // brushed grain runs along alternate plates
-    float grain = vnoise(vec2((pidh > 0.5 ? p.x : p.y) * 0.4, (pidh > 0.5 ? p.y : p.x) * 22.0)) * 0.35;
+    float grain = vnoiseT(vec2((pidh > 0.5 ? p.x : p.y) * 0.4, (pidh > 0.5 ? p.y : p.x) * 22.0)) * 0.35;
     vec3 plate = vec3(0.0068, 0.0072, 0.0095) * (0.7 + pidh * 0.6 + grain);
     // rivets near each plate corner
     vec2 rc = abs(f) - 0.42;
@@ -424,13 +430,16 @@ void main(){
     for(int k=0;k<12;k++){
       if(k >= uPoolCount) break;
       vec4 pl = uPools[k];
-      float d = length(p - pl.xy) / pl.z + (vnoise(p * 1.4 + float(k) * 7.0 + uTime * 0.4) - 0.5) * 0.1;
+      float d0 = length(p - pl.xy) / pl.z;
+      // the rim glow fades by d≈1.2 (exp(-(0.2·18)²) ≈ 0): skip everything beyond
+      if(d0 > 1.25) continue;
+      float d = d0 + (vnoiseT(p * 1.4 + float(k) * 7.0 + uTime * 0.4) - 0.5) * 0.1;
       if(d < 1.1){
         float inside = 1.0 - smoothstep(0.94, 1.0, d);
         float shim = 0.5 + 0.5 * sin(uTime * 25.13 + d * 9.0);
         // thin bright caustic filaments over a near-black glossy liquid
-        float n1 = vnoise(p * 1.6 + vec2(uTime * 0.6, -uTime * 0.4));
-        float n2 = vnoise(p * 1.6 - vec2(uTime * 0.5, uTime * 0.7) + 4.0);
+        float n1 = vnoiseT(p * 1.6 + vec2(uTime * 0.6, -uTime * 0.4));
+        float n2 = vnoiseT(p * 1.6 - vec2(uTime * 0.5, uTime * 0.7) + 4.0);
         float caust = pow(1.0 - abs(n1 - n2), 14.0);
         // live: a pylon discharge electrified it — the filaments flare, the whole pool crackles
         float live = clamp(pl.w, 0.0, 1.0);
@@ -457,7 +466,7 @@ void main(){
   col = col * (1.0 - dc.a) + decal;
   // ice sheen
   if(uIce > 0.0){
-    float streak = fbm(vec2(p.x * 0.2 + p.y * 0.6, p.y * 0.05) * 2.0);
+    float streak = fbmT(vec2(p.x * 0.2 + p.y * 0.6, p.y * 0.05) * 2.0);
     col = mix(col, col * 0.8 + vec3(0.002, 0.007, 0.011) * (0.4 + streak * 1.5) + litF * 0.03, uIce);
   }
   // corruption: tiles flicker and invert
@@ -515,6 +524,9 @@ export class Floor {
         uTime: { value: 0 },
         tDecal: { value: this.decals.rt.texture },
         uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => new Vector4()) },
+        uRippleCount: { value: 0 },
+        tNoise: { value: noiseTexture() },
+        uWellCount: { value: 0 },
         uTint: { value: new Vector3(1, 1, 1) },
         uIce: { value: 0 },
         uCorrupt: { value: 0 },
@@ -572,14 +584,19 @@ export class Floor {
     U['uTime']!.value = time;
     this.wallMat.uniforms['uTime']!.value = time;
     (U['uPlayer']!.value as Vector3).set(px, 0, py);
+    // only live ripples are sent, packed first: the shader loops over uRippleCount, not all slots
     const arr = U['uRipples']!.value as Vector4[];
+    let n = 0;
     for (let i = 0; i < MAX_RIPPLES; i++) {
       const o = i * 4;
-      if (this.rip[o + 3]! > 0) {
-        this.rip[o + 2] = this.rip[o + 2]! + dt;
-        if (this.rip[o + 2]! > 1.6) this.rip[o + 3] = 0;
+      if (this.rip[o + 3]! <= 0) continue;
+      this.rip[o + 2] = this.rip[o + 2]! + dt;
+      if (this.rip[o + 2]! > 1.6) {
+        this.rip[o + 3] = 0;
+        continue;
       }
-      arr[i]!.set(this.rip[o]!, this.rip[o + 1]!, this.rip[o + 2]!, this.rip[o + 3]!);
+      arr[n++]!.set(this.rip[o]!, this.rip[o + 1]!, this.rip[o + 2]!, this.rip[o + 3]!);
     }
+    U['uRippleCount']!.value = n;
   }
 }
